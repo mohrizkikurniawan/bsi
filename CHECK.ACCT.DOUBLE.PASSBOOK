@@ -1,0 +1,71 @@
+*-----------------------------------------------------------------------------
+* <Rating>-56</Rating>
+*-----------------------------------------------------------------------------
+*-----------------------------------------------------------------------------
+* Created by Moh Rizki Kurniawan
+* Date : 08 Mei 2023
+* service to auto create resp payroll cms if resp didnt create in folder RESPON
+*---------------------------------------------------------------------------------------------
+    PROGRAM CHECK.ACCT.DOUBLE.PASSBOOK
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+
+    GOSUB INIT
+    GOSUB PROCESS
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+INIT:
+*---------------------------------------------------------------------------------------------
+
+    FN.ACCT.STMT.PRINT = "F.ACCT.STMT.PRINT"
+    F.ACCT.STMT.PRINT = ""
+    CALL OPF(FN.ACCT.STMT.PRINT, F.ACCT.STMT.PRINT)
+
+*setup folder output
+    FN.FOLDER.OUTPUT       = "../bnk.run/MRK.BP/OUTPUT"
+    OPEN FN.FOLDER.OUTPUT TO F.FOLDER.OUTPUT ELSE
+        PRINT "### cant open folder " : FN.FOLDER.OUTPUT : " ###"
+        ABORT
+    END 
+    CNT.DOUBLE.PASSBOOK = 0
+    RECORD.TXT  = "idAccount|cntPassbook|idPassbook"
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+PROCESS:
+*---------------------------------------------------------------------------------------------
+
+* get data from table FN.ACCT.STMT.PRINT
+    SEL.CMD  = "SELECT " : FN.ACCT.STMT.PRINT
+    CALL EB.READLIST(SEL.CMD, SEL.LIST, "", SEL.CNT, SEL.ERR)
+
+    FOR IDX = 1 TO SEL.CNT
+        ID.ACCT.STMT.PRINT  = SEL.LIST<IDX>
+*        ID.ACCT.STMT.PRINT  = '7097767909'
+        PRINT '### on check data ' : IDX : " idAccount : " : ID.ACCT.STMT.PRINT : " ###"
+        CALL F.READ(FN.ACCT.STMT.PRINT, ID.ACCT.STMT.PRINT, R.ACCT.STMT.PRINT, F.ACCT.STMT.PRINT, '')
+        PASSBOOK.CNT = DCOUNT(R.ACCT.STMT.PRINT, @FM)
+        CONVERT @FM TO '*' IN R.ACCT.STMT.PRINT
+        IF PASSBOOK.CNT GT 1 THEN
+            CNT.DOUBLE.PASSBOOK = CNT.DOUBLE.PASSBOOK + 1
+            RECORD.TXT<-1>  = ID.ACCT.STMT.PRINT : "|" : PASSBOOK.CNT : "|" : R.ACCT.STMT.PRINT
+            PRINT '### duplicated passbook ###'
+        END ELSE
+            PRINT '### bypass ###'
+        END
+    NEXT IDX
+
+    ID.TXT      = "DoublePassbook." : TODAY : "." : CNT.DOUBLE.PASSBOOK : ".txt"
+    WRITE RECORD.TXT TO F.FOLDER.OUTPUT, ID.TXT
+
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+END
+
+
+
+
+

@@ -1,0 +1,40 @@
+*-----------------------------------------------------------------------------
+* <Rating>-10</Rating>
+*-----------------------------------------------------------------------------
+*-----------------------------------------------------------------------------
+* Created by Moh Rizki Kurniawan
+* Date : 08 Mei 2023
+* service to check account for double passbook
+*---------------------------------------------------------------------------------------------
+    SUBROUTINE IDIB.MT.DOUBLE.PASSBOOK.LOAD
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.BSI.TH.DOUBLE.PASSBOOK
+    $INSERT I_DOUBLE.PASSBOOK.COMMON
+
+
+    GOSUB INIT
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+INIT:
+*---------------------------------------------------------------------------------------------
+    
+    FN.ACCT.STMT.PRINT = "F.ACCT.STMT.PRINT"
+    F.ACCT.STMT.PRINT = ""
+    CALL OPF(FN.ACCT.STMT.PRINT, F.ACCT.STMT.PRINT)
+
+    FN.BSI.TH.DOUBLE.PASSBOOK = "F.BSI.TH.DOUBLE.PASSBOOK"
+    F.BSI.TH.DOUBLE.PASSBOOK  = ""
+    CALL OPF(FN.BSI.TH.DOUBLE.PASSBOOK, F.BSI.TH.DOUBLE.PASSBOOK)
+
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+END
+
+
+
+
+

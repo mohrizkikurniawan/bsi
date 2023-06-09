@@ -1,0 +1,225 @@
+    SUBROUTINE IDI.DE.I.TAG59(TAG,BENEFICIARY,OFS.DATA,SPARE1,SPARE2,SPARE3,SPARE4,DE.I.FIELD.DATA,TAG.ERR)
+*-----------------------------------------------------------------------------
+* <Rating>-43</Rating>
+************************************************************************************
+*
+* This routine assigns SWIFT tag56 - Imtermediary to the ofs message being
+* build up via inward delivery
+* translate the raw data into OFS format and written away to the ofs directory specified
+*
+* Inward
+*  Tag           -  The swift tag either 59 or 59A
+*  Beneficiary   -  The swift data
+*
+* Outward
+*  OFS.DATA      - The corresponding application field in OFS format
+*  DE.I.FIELD.DATA - Field name : TM: field values separated by VM
+*  TAG.ERR         - Tag error.
+*
+************************************************************************************
+*
+*       MODIFICATIONS
+*      ---------------
+*
+* 24/07/02 - EN_10000786
+*            New Program
+* 29/10/02 - BG_100002532
+*            Change COMPANY to ID.COMPANY
+*
+* 17/07/03 - CI_10010886
+*            In inward processing, FT goes to IHLD state.When there is a
+*            second slash in the tag 59, acct no is not stripped properly.
+*
+*
+* 28/01/04 - CI_10016936
+*            While mapping the Account field data to OFS.DATA, use the
+*            syntax ACCOUNT field name :1= Account field data content
+*
+* 06/05/04 - EN_10002261
+*            SWIFT related changes for bulk credit/debit processing
+*
+* 07/05/05 - CI_10030002
+*            Map tag59 of MT111 to PAYEE Field in EB.MESSAGE.111
+*
+* 21/02/07 - BG_100013037
+*            CODE.REVIEW changes.
+*
+* 28/04/09 - EN_10004043
+*            SAR Ref: SAR-2008-12-19-0003
+*            For 202C this tag will be called twice. One for A and another one
+*            is for B sequence. To differentiate it TAG<2> will contain 'B', i.e.,
+*            it is being called for B seq tags
+*
+* 07/07/11 - Task 240725
+*            REF:237954
+*            BEN.ACCT.DATA value trimmed in order to eliminate spaces
+*
+* 07/12/17 - ATI-EKL
+*            Introduce 59F mapping - November Changes
+*            CR Pengembangan Valas
+************************************************************************************
+*
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+*
+    GOSUB INITIALISE
+*
+    IF B.TAG THEN
+        GOSUB UPDATE.B.TAG
+    END
+    IF TAG.ERR OR B.TAG THEN
+        RETURN
+    END
+
+    GOSUB GET.BEN.ACCT.DATA
+
+    BEGIN CASE
+    CASE TAG = '59A'
+
+*            CALL DE.SWIFT.BIC(BENEFICIARY,COMPANY,CUSTOMER.NO)
+        CALL DE.SWIFT.BIC(BENEFICIARY,ID.COMPANY,CUSTOMER.NO)
+        IF CUSTOMER.NO = '' THEN
+            CUSTOMER.NO = PREFIX:BENEFICIARY
+        END
+        OFS.DATA := BEN.CUSTOMER :'=': CUSTOMER.NO
+        DE.I.FIELD.DATA<1> ='"':BEN.CUSTOMER:'"':CHARX(251):CUSTOMER.NO
+
+
+*
+    CASE TAG = '59'
+        CONVERT CRLF TO VM IN BENEFICIARY
+*
+        NO.CRLF = DCOUNT(BENEFICIARY,VM)
+
+*
+        FOR C.CRLF = 1 TO NO.CRLF
+
+            FIELD.DATA = BENEFICIARY<1,C.CRLF>
+            FIELD.DATA = QUOTE(FIELD.DATA)
+            IF C.CRLF = NO.CRLF THEN
+                COMMA.SEP = ''
+            END ELSE
+                COMMA.SEP = ','
+            END
+            OFS.DATA = OFS.DATA : BEN.CUSTOMER : ':':C.CRLF:'=':FIELD.DATA :COMMA.SEP
+
+        NEXT C.CRLF
+        DE.I.FIELD.DATA<1> = '"':BEN.CUSTOMER:'"':CHARX(251):BENEFICIARY
+
+*20171207-/ATIEKL
+    CASE TAG = '59F'
+        CONVERT CRLF TO VM IN BENEFICIARY
+*
+        NO.CRLF = DCOUNT(BENEFICIARY,VM)
+
+*
+        FOR C.CRLF = 1 TO NO.CRLF
+
+            FIELD.DATA = BENEFICIARY<1,C.CRLF>
+            FIELD.DATA = QUOTE(FIELD.DATA)
+            IF C.CRLF = NO.CRLF THEN
+                COMMA.SEP = ''
+            END ELSE
+                COMMA.SEP = ','
+            END
+            OFS.DATA = OFS.DATA : BEN.CUSTOMER : ':':C.CRLF:'=':FIELD.DATA :COMMA.SEP
+
+        NEXT C.CRLF
+        DE.I.FIELD.DATA<1> = '"':BEN.CUSTOMER:'"':CHARX(251):BENEFICIARY
+*20171207-ATIEKL
+    CASE 1
+        TAG.ERR = 'FIELD NOT MAPPED FOR TAG -':TAG
+
+    END CASE
+*
+    RETURN
+************************************************************************************
+UPDATE.B.TAG:
+************************************************************************************
+    CONVERT CRLF TO VM IN BENEFICIARY
+
+    NO.CRLF = DCOUNT(BENEFICIARY,VM)
+
+
+    FOR C.CRLF = 1 TO NO.CRLF
+
+        FIELD.DATA = BENEFICIARY<1,C.CRLF>
+        FIELD.DATA = QUOTE(FIELD.DATA)
+        IF C.CRLF = NO.CRLF THEN
+            COMMA.SEP = ''
+        END ELSE
+            COMMA.SEP = ','
+        END
+        OFS.DATA = OFS.DATA : BEN.CUSTOMER : ':':C.CRLF:'=':FIELD.DATA :COMMA.SEP
+
+    NEXT C.CRLF
+    DE.I.FIELD.DATA<1> = '"':BEN.CUSTOMER:'"':CHARX(251):BENEFICIARY
+    RETURN
+*
+************************************************************************************
+INITIALISE:
+************************************************************************************
+*
+
+    ETEXT = ''
+    CUSTOMER.NO = ''
+    CRLF = CHARX(013):CHARX(010)
+    OFS.DATA = ''
+    LEN.CRLF = LEN(CRLF)
+    LEN.BENEFICIARY = LEN(BENEFICIARY)
+    FIELD.DATA = ''
+    TAG.ERR = ''
+    DE.I.FIELD.DATA = ''
+    BEN.ACCOUNT.FIELD = ''
+    B.TAG = ''
+    IF TAG<2> = 'B' THEN
+        B.TAG = 1
+        TAG = TAG<1>
+    END
+
+    PREFIX = ''
+*
+    BEGIN CASE
+*
+    CASE APPLICATION = 'FUNDS.TRANSFER'
+        BEN.CUSTOMER = 'IN.BEN.CUSTOMER'
+        IF NOT(B.TAG) THEN
+            BEN.ACCOUNT.FIELD = 'IN.BEN.ACCT.NO'
+        END
+        PREFIX = 'SW-'
+    CASE APPLICATION = 'PAYMENT.STOP'
+        BEN.CUSTOMER = 'PAYEE'
+    CASE APPLICATION = 'EB.MESSAGE.111'
+        BEN.CUSTOMER = 'PAYEE'
+*
+    CASE 1
+*
+    END CASE
+*
+    RETURN
+
+********************************************************************
+GET.BEN.ACCT.DATA:
+********************************************************************
+    IF INDEX(BENEFICIARY,'/',1) THEN
+        NO.CRLF = DCOUNT(BENEFICIARY,CRLF)
+        IF NO.CRLF GT 1 AND BENEFICIARY[1,1] = '/' THEN
+            CRLF.POSITION = INDEX(BENEFICIARY,CRLF,1)
+*         XX = INDEX(BENEFICIARY,'/',2)
+*         IF NOT(XX) THEN
+            XX = INDEX(BENEFICIARY,'/',1)
+*         END
+            BEN.ACCT.DATA = TRIM(BENEFICIARY[XX+1,CRLF.POSITION-(XX+1)])
+            IF BEN.ACCOUNT.FIELD THEN
+                OFS.DATA := BEN.ACCOUNT.FIELD :':1=': BEN.ACCT.DATA:','
+                DE.I.FIELD.DATA<2> ='"':BEN.ACCOUNT.FIELD:'"':CHARX(251):BEN.ACCT.DATA
+            END
+            BENEFICIARY = BENEFICIARY[CRLF.POSITION + LEN.CRLF,LEN.BENEFICIARY]
+        END
+    END
+    RETURN
+*
+END
+
+
+

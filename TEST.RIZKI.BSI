@@ -1,0 +1,149 @@
+*-----------------------------------------------------------------------------
+* <Rating>115</Rating>
+*-----------------------------------------------------------------------------
+*-----------------------------------------------------------------------------
+* Created by Moh Rizki Kurniawan
+* Date : 08 Mei 2023
+* service to auto create resp payroll cms if resp didnt create in folder RESPON
+*---------------------------------------------------------------------------------------------
+    PROGRAM TEST.RIZKI.BSI
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.BATCH
+    $INSERT I_F.EB.LOOKUP
+    $INSERT I_F.TSA.SERVICE
+
+    GOSUB INIT
+    GOSUB PROCESS
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+INIT:
+*---------------------------------------------------------------------------------------------
+    DEBUG
+    FN.BSMIN.CMS.TEMP  = "F.BSMIN.CMS.TEMP"
+    F.BSMIN.CMS.TEMP  = ""
+    CALL OPF(FN.BSMIN.CMS.TEMP, F.BSMIN.CMS.TEMP)
+
+    FN.EB.LOOKUP      = "F.EB.LOOKUP"
+    F.EB.LOOKUP     = ""
+    CALL OPF(FN.EB.LOOKUP, F.EB.LOOKUP)
+
+    FN.BATCH         = "F.BATCH"
+    F.BATCH         = ""
+    CALL OPF(FN.BATCH, F.BATCH)
+
+    FN.TSA.SERVICE     = "F.TSA.SERVICE"
+    F.TSA.SERVICE     = ""
+    CALL OPF(FN.TSA.SERVICE, F.TSA.SERVICE)
+
+    CALL F.READ(FN.BATCH, "BNK/IDIB.BSM.SERVICE.MANAGER", R.BATCH, F.BATCH, '')
+    ID.COUNT.SERVICE  = R.BATCH<Batch_Data, 1, 1>
+    ID.FOLDER.SERVICE = R.BATCH<Batch_Data, 1, 2>
+    ID.DATA.TSA       = R.BATCH<Batch_Data, 1, 3>
+    ID.SERVICE.SEQ    = R.BATCH<Batch_Data, 1, 4>
+
+    CALL F.READ(FN.EB.LOOKUP, ID.FOLDER.SERVICE, R.EB.LOOKUP, F.EB.LOOKUP, '')
+    RV.PATH1  = R.EB.LOOKUP<EB.LU.DATA.NAME, 1>
+    RV.PATH2  = R.EB.LOOKUP<EB.LU.DATA.NAME, 2>
+    RV.PATH   = RV.PATH1 : RV.PATH2
+    CALL OCOMO("pathFolder : " : RV.PATH)
+
+    FN.FOLDER.OUT       = RV.PATH : "/OUT"
+    FN.FOLDER.RESPON    = RV.PATH : "/RESPON"
+
+    OPEN FN.FOLDER.OUT TO F.FOLDER.OUT ELSE
+        CALL OCOMO("can't open folder : " : FN.FOLDER.OUT)
+        PRINT "CAN'T OPEN FOLDER " : FN.FOLDER.OUT
+        ABORT
+    END 
+    OPEN FN.FOLDER.RESPON TO F.FOLDER.RESPON ELSE
+        CALL OCOMO("can't open folder : " : FN.FOLDER.RESPON)
+        PRINT "CAN'T OPEN FOLDER " : FN.FOLDER.RESPON
+        ABORT
+    END
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+PROCESS:
+*---------------------------------------------------------------------------------------------
+    DEBUG
+* get data from table F.BSMIN.CMS.TEMP
+    SEL.CMD  = "SELECT " : FN.BSMIN.CMS.TEMP
+    CALL EB.READLIST(SEL.CMD, SEL.LIST, "", SEL.CNT, SEL.ERR)
+    CALL OCOMO('list F.BSMIN.CMS.TEMP : ' : SEL.LIST)
+
+* Check BATCH and TSA.SERVICE from BNK/IDIB.POSTING.PAYROLL for duplicate process
+    IF SEL.LIST NE '' THEN GOSUB CHECK.BATCH
+
+    CALL OCOMO('service : ' : SERVICE.NAME.SEQ : ' -> ' : SERVICE.CONTROL)
+    CALL OCOMO('record F.BSMIN.CMS.TEMP : ' : R.BSMIN.CMS.TEMP)
+    IF SERVICE.CONTROL NE 'START' AND R.BSMIN.CMS.TEMP NE '' THEN GOSUB CREATE.RESP
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+CREATE.RESP:
+*---------------------------------------------------------------------------------------------
+    DEBUG
+* check list in folder RESPON exist or not, if exist return
+    ID.TXT   = SEL.LIST<1>
+    CALL OCOMO('process regenerate : ' : CHECK.ID.TXT)
+    ID.TXT.LOG   = FIELD(ID.TXT, "*", 1) : ".LOG"
+
+* get data in table BSMIN.CMS.TEMP (case : multiple textfile)
+    SEL.CMD1  = "SELECT " : FN.BSMIN.CMS.TEMP: " WITH @ID LIKE " :'"' : "...'" : CHECK.ID.TXT : "'..." : '"'
+    CALL EB.READLIST(SEL.CMD1, SEL.LIST1, "", SEL.CNT1, SEL.ERR1)
+    CALL OCOMO('listProcessing : ' : SEL.LIST1)
+
+* combine txt one by one, read from table BSMIN.CMS.TEMP and write into folder OUT and RESPON
+    FOR IDX = 1 TO SEL.CNT1
+        ID.TXT.TEMP   = SEL.LIST1<IDX>
+        CALL F.READ(FN.BSMIN.CMS.TEMP, ID.TXT.TEMP, R.BSMIN.CMS.TEMP, F.BSMIN.CMS.TEMP, "")
+        RV.FOLDER.RESPON<-1>    = R.BSMIN.CMS.TEMP
+
+        DELETE F.BSMIN.CMS.TEMP, ID.TXT.TEMP
+        CALL OCOMO('processingData : ' : IDX : ' , idFile : ' : ID.TXT.TEMP : ' , record : ' : R.BSMIN.CMS.TEMP)
+        CALL OCOMO('respon : ' : RV.FOLDER.RESPON)
+    NEXT IDX
+
+        WRITE RV.FOLDER.RESPON TO F.FOLDER.OUT, ID.TXT.LOG
+        WRITE RV.FOLDER.RESPON TO F.FOLDER.RESPON, ID.TXT.LOG
+    RETURN
+*---------------------------------------------------------------------------------------------
+CHECK.BATCH:
+*---------------------------------------------------------------------------------------------
+    DEBUG
+    CHECK.ID.TXT   = FIELD(SEL.LIST<1>, '*', 1)
+    CALL F.READ(FN.EB.LOOKUP, ID.COUNT.SERVICE, R.EB.LOOKUP, F.EB.LOOKUP, "")
+    COUNT.SERVICE    = R.EB.LOOKUP<EB.LU.OTHER.INFO>
+    CALL OCOMO('countService : ' : COUNT.SERVICE)
+
+    FOR IDX = 1 TO COUNT.SERVICE
+        SERVICE.NAME.SEQ  = ID.SERVICE.SEQ : "." : IDX
+        CALL F.READ(FN.BATCH, SERVICE.NAME.SEQ, R.BATCH, F.BATCH, '')
+        DATA.BATCH   = R.BATCH<Batch_Data>
+
+        FINDSTR CHECK.ID.TXT IN DATA.BATCH SETTING POS.F, POS.V, POS.S THEN
+            FLAG.TS  = 1
+            BREAK
+        END
+    NEXT IDX
+
+    IF FLALG.TS EQ 1 THEN
+        CALL OCOMO('service : ' : SERVICE.NAME.SEQ : ' search : ' : CHECK.ID.TXT : ' in ' : DATA.BACH)
+
+        CALL F.READ(FN.TSA.SERVICE, SERVICE.NAME.SEQ, R.TSA.SERVICE, F.TSA.SERVICE, '')
+        SERVICE.CONTROL  = R.TSA.SERVICE<TsaService_ServiceControl> 
+    END
+
+    CALL F.READ(FN.BSMIN.CMS.TEMP, SEL.LIST<1>, R.BSMIN.CMS.TEMP, F.BSMIN.CMS.TEMP, '')
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+END
+
+
+
+
+

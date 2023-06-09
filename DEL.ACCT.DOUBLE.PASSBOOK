@@ -1,0 +1,69 @@
+*-----------------------------------------------------------------------------
+* <Rating>-227</Rating>
+*-----------------------------------------------------------------------------
+*-----------------------------------------------------------------------------
+* Created by Moh Rizki Kurniawan
+* Date : 08 Mei 2023
+* service to auto create resp payroll cms if resp didnt create in folder RESPON
+*---------------------------------------------------------------------------------------------
+    PROGRAM DEL.ACCT.DOUBLE.PASSBOOK
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+
+    GOSUB INIT
+    GOSUB PROCESS
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+INIT:
+*---------------------------------------------------------------------------------------------
+DEBUG
+    FN.ACCT.STMT.PRINT = "F.ACCT.STMT.PRINT"
+    F.ACCT.STMT.PRINT = ""
+    CALL OPF(FN.ACCT.STMT.PRINT, F.ACCT.STMT.PRINT)
+
+*setup folder output
+    FN.FOLDER.DEL.PROCESS       = ".../bnk.run/MRK.BP/DEL.PROCESS"
+    OPEN FN.FOLDER.DEL.PROCESS  TO F.FOLDER.DEL.PROCESS  ELSE
+        PRINT "### cant open folder " : FN.FOLDER.DEL.PROCESS : " ###"
+        ABORT
+    END 
+    CNT.DOUBLE.PASSBOOK = 0
+    RECORD.TXT  = "ACCOUNT|PASBOOK"
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+PROCESS:
+*---------------------------------------------------------------------------------------------
+DEBUG
+* get data from table FN.ACCT.STMT.PRINT
+    SEL.CMD  = "SELECT " : FN.FOLDER.DEL.PROCESS : " SAMPLE 1"
+    CALL EB.READLIST(SEL.CMD, SEL.LIST, "", SEL.CNT, SEL.ERR)
+
+    PRINT '### on going delete record from textfile : ' : SEL.LIST : ' ###'
+
+    RECORD.CNT  = FIELD(SEL.LIST, ".", 3)
+
+    READ R.FOLDER.DEL.PROCESS FROM F.FOLDER.DEL.PROCESS SETTING Y.ERROR ON ERROR
+        PRINT '### cant read folder from ' : F.FOLDER.DEL.PROCESS : ' ###'
+    END
+
+    FOR IDX = 1 TO RECORD.CNT
+        RECORD.IDX  = R.FOLDER.DEL.PROCESS<IDX>
+        ID.ACCOUNT  = FIELD(RECORD.TXT, "|", 1)
+        CALL F.READ(FN.ACCT.STMT.PRINT, ID.ACCOUNT, R.ACCT.STMT.PRINT, F.ACCT.STMT.PRINT, '')
+        LOCATE 'PASSBOOK/0' IN R.ACCT.STMT.PRINT SETTING Y.POSF, Y.POSV, Y.POSS THEN
+            DEL R.ACCT.STMT.PRINT<Y.POSF, Y.POSV, Y.POSS>
+        END
+        CALL F.WRITE(FN.ACCT.STMT.PRINT, ID.ACCOUNT, R.ACCT.STMT.PRINT)
+        PRINT '### processing delete data ' : IDX : ' ###'
+        PRINT '### delete ' : R.ACCT.STMT.PRINT<Y.POSF, Y.POSV, Y.POSS> : 'idAccount ' : ID.ACCOUNT : " done ###" 
+    NEXT IDX
+
+    RETURN
+*---------------------------------------------------------------------------------------------
+END
+
+
+

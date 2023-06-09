@@ -1,0 +1,1085 @@
+*-----------------------------------------------------------------------------
+* <Rating>1349</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDI.PROCESS.MMC(Y.IN,Y.TYPE.PEMBIAYAAN)
+*-----------------------------------------------------------------------------
+* Developer Name   : ATI-Ratih Purwaning
+* Development Date : Oct 10, 2018
+* Description      : Routine to process interface murabaha channelling CR 20/292-1/BBG
+*                   - Routine called by IDIB.FOS.DISBURSEMENT with DATA /MMC
+*                   - Parameter stored in EB.LOOKUP>MMC*21051-DISBURSE
+*                   - This program will create OFS for Parent Limit > Child Limit,
+*                     Collateral Right > Collateral > Asset Register > Agent > then Loans
+*                   - If one process error, all transaction will be cancelled.
+*-----------------------------------------------------------------------------
+* Modification History:
+* - 20190903_Firsty ACC#201907192310529 Fixing bug CFQ with condition for same month
+*-----------------------------------------------------------------------------
+* Date            Modified by                Description
+*-----------------------------------------------------------------------------
+*
+*-----------------------------------------------------------------------------
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_GTS.COMMON
+    $INSERT I_F.LIMIT
+    $INSERT I_F.COLLATERAL.RIGHT
+    $INSERT I_F.COLLATERAL
+    $INSERT I_F.IDCH.ASSET.REGISTER
+    $INSERT I_F.LD.LOANS.AND.DEPOSITS
+    $INSERT I_F.IDIL.UPLOAD.MUSMUT.FOS
+    $INSERT I_F.EB.FILE.UPLOAD
+    $INSERT I_F.EB.FILE.UPLOAD.TYPE
+    $INSERT I_F.EB.FILE.UPLOAD.PARAM
+
+*-----------------------------------------------------------------------------
+MAIN:
+*-----------------------------------------------------------------------------
+    GOSUB INIT
+
+    IF R.DATA.IN THEN
+        GOSUB PROCESS
+    END
+
+    RETURN
+*-----------------------------------------------------------------------------
+INIT:
+*-----------------------------------------------------------------------------
+    Y.APP.NAME = FIELD(Y.IN,"-",2)
+
+    Y.FOLDER.PATH =  "../bnk.interface/BSMINTF/BSMIN/FOS/"
+
+    FN.FOLDER.PROCESS.IN = Y.FOLDER.PATH : "PROSES/IN/" : Y.APP.NAME
+    F.FOLDER.PROCESS.IN  = ""
+*    CALL OPF(FN.FOLDER.PROCESS.IN,F.FOLDER.PROCESS.IN)
+
+    OPEN FN.FOLDER.PROCESS.IN TO F.FOLDER.PROCESS.IN ELSE
+        Y.EXEC.CMD = 'CREATE.FILE ':FN.FOLDER.PROCESS.IN:' TYPE=UD'
+        EXECUTE Y.EXEC.CMD
+        OPEN FN.FOLDER.PROCESS.IN TO F.FOLDER.PROCESS.IN ELSE
+            RETURN
+        END
+    END
+
+    FN.FOLDER.BACKUP = Y.FOLDER.PATH :"BACKUP"
+    F.FOLDER.BACKUP  = ""
+    CALL OPF(FN.FOLDER.BACKUP,F.FOLDER.BACKUP)
+
+    FN.FOLDER.DUPLICATE = Y.FOLDER.PATH :"DUPLICATE"
+    F.FOLDER.DUPLICATE  = ""
+    CALL OPF(FN.FOLDER.DUPLICATE,F.FOLDER.DUPLICATE)
+
+    FN.FOLDER.PROCESS.OUT = Y.FOLDER.PATH : "PROSES/OUT/" : Y.APP.NAME
+    F.FOLDER.PROCESS.OUT  = ""
+*    CALL OPF(FN.FOLDER.PROCESS.OUT,F.FOLDER.PROCESS.OUT)
+
+    OPEN FN.FOLDER.PROCESS.OUT TO F.FOLDER.PROCESS.OUT ELSE
+        Y.EXEC.CMD = 'CREATE.FILE ':FN.FOLDER.PROCESS.OUT:' TYPE=UD'
+        EXECUTE Y.EXEC.CMD
+        OPEN FN.FOLDER.PROCESS.OUT TO F.FOLDER.PROCESS.OUT ELSE
+            RETURN
+        END
+    END
+
+    FN.FOLDER.LOG = Y.FOLDER.PATH :"LOG"
+    F.FOLDER.LOG  = ""
+    CALL OPF(FN.FOLDER.LOG,F.FOLDER.LOG)
+
+    FN.EB.FILE.UPLOAD = "F.EB.FILE.UPLOAD"
+    F.EB.FILE.UPLOAD  = ""
+    CALL OPF(FN.EB.FILE.UPLOAD,F.EB.FILE.UPLOAD)
+
+    FN.EB.FILE.UPLOAD.TYPE = "F.EB.FILE.UPLOAD.TYPE"
+    F.EB.FILE.UPLOAD.TYPE  = ""
+    CALL OPF(FN.EB.FILE.UPLOAD.TYPE,F.EB.FILE.UPLOAD.TYPE)
+
+    FN.EB.FILE.UPLOAD.PARAM = "F.EB.FILE.UPLOAD.PARAM"
+    F.EB.FILE.UPLOAD.PARAM  = ""
+    CALL OPF(FN.EB.FILE.UPLOAD.PARAM,F.EB.FILE.UPLOAD.PARAM)
+
+    FN.LIMIT = "F.LIMIT"
+    F.LIMIT  = ""
+    CALL OPF(FN.LIMIT,F.LIMIT)
+
+    FN.LIMIT.HIS = "F.LIMIT$HIS"
+    F.LIMIT.HIS  = ""
+    CALL OPF(FN.LIMIT.HIS,F.LIMIT.HIS)
+
+    FN.COLLATERAL.RIGHT = "F.COLLATERAL.RIGHT"
+    F.COLLATERAL.RIGHT  = ""
+    CALL OPF(FN.COLLATERAL.RIGHT,F.COLLATERAL.RIGHT)
+
+    FN.COLLATERAL.RIGHT.HIS = "F.COLLATERAL.RIGHT$HIS"
+    F.COLLATERAL.RIGHT.HIS  = ""
+    CALL OPF(FN.COLLATERAL.RIGHT.HIS,F.COLLATERAL.RIGHT.HIS)
+
+    FN.COLLATERAL = "F.COLLATERAL"
+    F.COLLATERAL  = ""
+    CALL OPF(FN.COLLATERAL,F.COLLATERAL)
+
+    Y.OFS.SOURCE = "FOS.INTERFACING"
+    Y.OFS.FUNCT  = "I"
+    Y.PROCESS    = "PROCESS"
+    ID.COMPANY   = FIELD(Y.IN,"-",3)
+
+    Y.ID.LOG      = Y.IN:".log"
+    Y.UPLOAD.TYPE = "IRR.FIN"
+    Y.CHAR        = CHAR(13):CHAR(10)
+    Y.FLAG.ERROR  = 0
+    Y.FLAG.PROCESS = 1
+
+    R.EB.FILE.UPLOAD      = ""
+    R.IDIL.UPLOAD.MUSMUT.FOS = ""
+
+    OPENSEQ FN.FOLDER.LOG,Y.ID.LOG TO F.FOLDER.LOG ELSE
+        CREATE F.FOLDER.LOG ELSE
+            RETURN
+        END
+    END
+
+    CALL F.READ(FN.EB.FILE.UPLOAD.TYPE, Y.UPLOAD.TYPE, R.EB.FILE.UPLOAD.TYPE, F.EB.FILE.UPLOAD.TYPE, EB.FILE.UPLOAD.TYPE.ERR)
+    Y.UPLOAD.DIR = R.EB.FILE.UPLOAD.TYPE<EB.UT.UPLOAD.DIR>
+
+    CALL F.READ(FN.EB.FILE.UPLOAD.PARAM, "SYSTEM", R.EB.FILE.UPLOAD.PARAM, F.EB.FILE.UPLOAD.PARAM, EB.FILE.UPLOAD.PARAM.ERR)
+    Y.UPLOAD.PATH = R.EB.FILE.UPLOAD.PARAM<EB.UP.TC.UPLOAD.PATH>
+    Y.FILE.PATH   = Y.UPLOAD.PATH :"\": Y.UPLOAD.DIR
+
+    FN.FILE.PATH = Y.FILE.PATH
+    F.FILE.PATH  = ""
+    CALL OPF(FN.FILE.PATH, F.FILE.PATH)
+
+    FN.IDIL.UPLOAD.MUSMUT.FOS = "F.IDIL.UPLOAD.MUSMUT.FOS"
+    F.IDIL.UPLOAD.MUSMUT.FOS  = ""
+    CALL OPF(FN.IDIL.UPLOAD.MUSMUT.FOS,F.IDIL.UPLOAD.MUSMUT.FOS)
+
+    Y.ID.BACKUP = Y.IN:".backup"
+    CALL F.READ(FN.FOLDER.BACKUP,Y.ID.BACKUP,R.DATA.BACKUP,F.FOLDER.BACKUP,READ.FOLDER.PROCESS.BACKUP.ERR)
+
+    IF R.DATA.BACKUP THEN
+        GOSUB FINAL.UPDATE
+    END
+
+    CALL F.READ(FN.FOLDER.PROCESS.IN,Y.IN,R.DATA.IN,F.FOLDER.PROCESS.IN,READ.FOLDER.PROCESS.IN.ERR)
+
+    IF READ.FOLDER.PROCESS.IN.ERR THEN
+        RETURN
+    END
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS:
+*-----------------------------------------------------------------------------
+    R.DATA = R.DATA.IN
+    CONVERT Y.CHAR TO @FM IN R.DATA
+    Y.CNT.DATA = DCOUNT(R.DATA,@FM)
+    FOR Y.A = 1 TO Y.CNT.DATA
+        Y.PREFIX = FIELD(R.DATA<Y.A>,"*",1)
+        Y.DATA   = FIELD(R.DATA<Y.A>,"*",2)
+        Y.HEADER = FIELD(Y.DATA,"|",1)
+
+        BEGIN CASE
+
+        CASE Y.PREFIX EQ "LIMIT-INDUK"
+            GOSUB PROCESS.LIMIT.PARENT
+
+        CASE Y.PREFIX EQ "AGEN-REG"
+            GOSUB PROCESS.AGENT
+
+        CASE Y.PREFIX EQ "LIMIT-ANAK"
+            GOSUB PROCESS.LIMIT.CHILD
+
+        CASE Y.PREFIX EQ "LINK-JAMINAN"
+            GOSUB PROCESS.COLLATERAL.RIGHT
+
+        CASE Y.PREFIX EQ "DETAIL-JAMINAN"
+            GOSUB PROCESS.COLLATERAL
+
+        CASE Y.PREFIX EQ "ASET-REG"
+            GOSUB PROCESS.ASSET.REGISTER
+
+        CASE Y.PREFIX EQ "PEMBIAYAAN"
+            GOSUB PROCESS.PEMBIAYAAN
+
+        END CASE
+
+        IF Y.FLAG.PROCESS EQ '1' THEN
+            Y.SIGN           = "SUKSES"
+            Y.OUT.SIGN       = "1"
+            Y.RESPONSE.ERROR = ""
+        END ELSE
+            Y.SIGN           = "GAGAL"
+            Y.OUT.SIGN       = "-1"
+            Y.TRANSACTION.ID = ""
+        END
+
+        CONVERT @VM TO "|" IN Y.TRANSACTION.ID
+        Y.OUTPUT.SIGN<-1> = Y.OUT.SIGN
+        Y.OUTPUT<-1>      = Y.PREFIX :"*": Y.HEADER :"|": Y.FLAG.PROCESS :"|":Y.SIGN:"|":Y.TRANSACTION.ID:"|":Y.RESPONSE.ERROR
+
+    NEXT Y.A
+
+    CLOSESEQ F.FOLDER.LOG
+    GOSUB FINAL.UPDATE
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS.LIMIT.PARENT:
+*-----------------------------------------------------------------------------
+
+    Y.OFS.VERSION     = "LIMIT,IDI.SECURED.GEN.FOS"
+    Y.GTS.MODE        = ""
+    Y.NO.OF.AUTH      = 0
+    Y.TRANSACTION.ID  = ""
+
+    GOSUB SEQ.LIMIT
+
+    Y.LIMIT.PARENT.ID  = Y.LIMIT.PARENT : "." : Y.SEQ.LIMIT.PARENT
+
+    OFS.HDR.LIMIT.PARENT = Y.OFS.VERSION:'/I/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',':Y.LIMIT.PARENT.ID:'/':Y.HEADER
+
+    OFS.DTL.LIMIT.PARENT  = ",LIMIT.CURRENCY::="    : FIELD(Y.DATA,"|",2)
+    OFS.DTL.LIMIT.PARENT := ",PROPOSAL.DATE::="     : FIELD(Y.DATA,"|",3)
+    OFS.DTL.LIMIT.PARENT := ",INTERNAL.AMOUNT::="   : FIELD(Y.DATA,"|",4)
+    OFS.DTL.LIMIT.PARENT := ",APPROVAL.DATE::="     : FIELD(Y.DATA,"|",5)
+    OFS.DTL.LIMIT.PARENT := ",MAXIMUM.TOTAL::="     : FIELD(Y.DATA,"|",6)
+    OFS.DTL.LIMIT.PARENT := ",ONLINE.LIMIT.DATE::=" : FIELD(Y.DATA,"|",7)
+    OFS.DTL.LIMIT.PARENT := ",CRT.SEG::="           : FIELD(Y.DATA,"|",8)
+    OFS.DTL.LIMIT.PARENT := ",OFFERED.UNTIL::="     : FIELD(Y.DATA,"|",9)
+    OFS.DTL.LIMIT.PARENT := ",INT.RATING::="        : FIELD(Y.DATA,"|",10)
+    OFS.DTL.LIMIT.PARENT := ",EXPIRY.DATE::="       : FIELD(Y.DATA,"|",11)
+    OFS.DTL.LIMIT.PARENT := ",EXT.RATING::="        : FIELD(Y.DATA,"|",12)
+    OFS.DTL.LIMIT.PARENT := ",REVIEW.FREQUENCY::="  : FIELD(Y.DATA,"|",13)
+    OFS.DTL.LIMIT.PARENT := ",GAS.CUS::="           : FIELD(Y.DATA,"|",14)
+    OFS.DTL.LIMIT.PARENT := ",GAS.PERIOD::="        : FIELD(Y.DATA,"|",15)
+    OFS.DTL.LIMIT.PARENT := ",AST.CUST::="          : FIELD(Y.DATA,"|",16)
+    OFS.DTL.LIMIT.PARENT := ",LIAB.GROUP::="        : FIELD(Y.DATA,"|",17)
+    OFS.DTL.LIMIT.PARENT := ",NOTES::="             : FIELD(Y.DATA,"|",18)
+
+    Y.OFS.MESSAGE = OFS.HDR.LIMIT.PARENT : OFS.DTL.LIMIT.PARENT
+
+    CALL OFS.INITIALISE.SOURCE(Y.OFS.SOURCE, '', "LOG.ERROR")
+    CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+    Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+    WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+        RETURN
+    END
+
+    Y.OFS.RESPONSE.HDR = FIELD(Y.OFS.RESPONSE,",",1)
+    Y.FLAG.PROCESS     = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+
+    IF Y.FLAG.PROCESS NE '1' THEN
+        Y.FLAG.ERROR += 1
+        Y.RESPONSE.ERROR = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+        CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+        Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+    END
+
+    Y.TRANSACTION.ID = Y.LIMIT.PARENT.ID
+
+    RETURN
+*-----------------------------------------------------------------------------
+SEQ.LIMIT:
+*-----------------------------------------------------------------------------
+    Y.CUSTOMER.ID      = FIELD(Y.HEADER,"-",2)
+    Y.LIMIT.PARENT     = Y.CUSTOMER.ID : ".0008200"
+
+    SEL.LIM.PARENT     = "SELECT ":FN.LIMIT:" WITH @ID LIKE ":Y.LIMIT.PARENT:"..."
+    CALL EB.READLIST(SEL.LIM.PARENT,LIST.LIM.PARENT,'',TOT.LIMIT.PARENT,'')
+
+    SEL.LIM.HIS.PARENT = "SELECT ":FN.LIMIT.HIS:" WITH @ID LIKE ":Y.LIMIT.PARENT:"..."
+    CALL EB.READLIST(SEL.LIM.HIS.PARENT,LIST.LIM.HIS.PARENT,'',TOT.LIMIT.HIS.PARENT,'')
+
+    Y.LIST.ALL.LIMIT   = LIST.LIM.PARENT : @FM : LIST.LIM.HIS.PARENT
+    Y.LIST.ALL.LIMIT   = SORT(Y.LIST.ALL.LIMIT)
+    CNT.ALL.LIMIT      = DCOUNT(Y.LIST.ALL.LIMIT,@FM)
+    Y.LAST.LIMIT       = Y.LIST.ALL.LIMIT<CNT.ALL.LIMIT>
+    Y.LAST.LIMIT       = FIELD(FIELD(Y.LAST.LIMIT,".",3),";",1)
+    Y.SEQ.LIMIT.PARENT = FMT(Y.LAST.LIMIT+1, "R%2")
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS.AGENT:
+*-----------------------------------------------------------------------------
+    Y.OFS.VERSION     = "TMB.LN.GROUP.LIMIT,IDI.CHANNEL.AGENT"
+    Y.GTS.MODE        = ""
+    Y.NO.OF.AUTH      = 0
+    Y.TRANSACTION.ID  = ""
+    Y.HEADER          = FIELD(Y.DATA,"|",1)
+
+    OFS.HDR.AGENT.REG  = Y.OFS.VERSION:'/I/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',/':Y.HEADER
+
+    OFS.DTL.AGENT.REG  = ",DESCRIPTION::="     : FIELD(Y.DATA,"|",2)
+    OFS.DTL.AGENT.REG := ",CURRENCY::="        : FIELD(Y.DATA,"|",3)
+    OFS.DTL.AGENT.REG := ",MAXIMUM.AMOUNT::="  : FIELD(Y.DATA,"|",4)
+    OFS.DTL.AGENT.REG := ",EXP.DATE.LIM::="    : FIELD(Y.DATA,"|",7)
+    OFS.DTL.AGENT.REG := ",MAIN.CUS::="        : FIELD(Y.DATA,"|",8)
+    OFS.DTL.AGENT.REG := ",TENOR::="           : FIELD(Y.DATA,"|",9)
+    OFS.DTL.AGENT.REG := ",FEE.AGENT::="       : FIELD(Y.DATA,"|",10)
+    OFS.DTL.AGENT.REG := ",AGENT.ACCT::="      : FIELD(Y.DATA,"|",11)
+    OFS.DTL.AGENT.REG := ",PKS.NO::="          : FIELD(Y.DATA,"|",14)
+    OFS.DTL.AGENT.REG := ",SKKP.NO::="         : FIELD(Y.DATA,"|",15)
+    OFS.DTL.AGENT.REG := ",SKKP.DATE::="       : FIELD(Y.DATA,"|",16)
+
+    Y.OFS.MESSAGE = OFS.HDR.AGENT.REG : OFS.DTL.AGENT.REG
+
+    CALL OFS.INITIALISE.SOURCE(Y.OFS.SOURCE, '', "LOG.ERROR")
+    CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+    Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+    WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+        RETURN
+    END
+
+    Y.OFS.RESPONSE.HDR  = FIELD(Y.OFS.RESPONSE,",",1)
+    Y.FLAG.PROCESS      = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+
+    Y.AGENT.ID = Y.OFS.RESPONSE['/',1,1]
+
+    IF Y.FLAG.PROCESS NE '1' THEN
+        Y.FLAG.ERROR += 1
+        Y.RESPONSE.ERROR = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+        CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+        Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+    END
+
+    Y.TRANSACTION.ID = Y.AGENT.ID
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS.LIMIT.CHILD:
+*-----------------------------------------------------------------------------
+    Y.OFS.VERSION    = "LIMIT,IDI.SECURED.FOS"
+    Y.GTS.MODE       = ""
+    Y.NO.OF.AUTH     = 0
+    Y.TRANSACTION.ID = ""
+
+    Y.HEADER         = FIELD(Y.DATA,"|",1)
+    Y.CUSTOMER.ID    = FIELD(Y.HEADER,"-",2)
+    Y.LIMIT.CHILD    = Y.CUSTOMER.ID : ".0008201"
+    Y.LIMIT.CHILD.ID  = Y.LIMIT.CHILD : "." : Y.SEQ.LIMIT.PARENT
+
+    OFS.HDR.LIMIT.CHILD = Y.OFS.VERSION:'/I/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',':Y.LIMIT.CHILD.ID:'/':Y.HEADER
+
+    OFS.DTL.LIMIT.CHILD  = ",LIMIT.CURRENCY::="    : FIELD(Y.DATA,"|",3)
+    OFS.DTL.LIMIT.CHILD := ",INTERNAL.AMOUNT::="   : FIELD(Y.DATA,"|",4)
+    OFS.DTL.LIMIT.CHILD := ",ONLINE.LIMIT.DATE::=" : FIELD(Y.DATA,"|",5)
+    OFS.DTL.LIMIT.CHILD := ",MAXIMUM.TOTAL::="     : FIELD(Y.DATA,"|",6)
+    OFS.DTL.LIMIT.CHILD := ",EXPIRY.DATE::="       : FIELD(Y.DATA,"|",7)
+    IF Y.AGENT.ID THEN
+        OFS.DTL.LIMIT.CHILD := ",T.GROUP.ID::="        : Y.AGENT.ID
+    END ELSE
+        OFS.DTL.LIMIT.CHILD := ",T.GROUP.ID::="        : FIELD(Y.DATA,"|",8)
+    END
+
+    OFS.DTL.LIMIT.CHILD := ",REVIEW.FREQUENCY::="  : FIELD(Y.DATA,"|",9)
+    OFS.DTL.LIMIT.CHILD := ",NOTES::="             : FIELD(Y.DATA,"|",10)
+    OFS.DTL.LIMIT.CHILD := ",ORIENTATION::="       : FIELD(Y.DATA,"|",11)
+    OFS.DTL.LIMIT.CHILD := ",PRODUCT.CHAR::="      : FIELD(Y.DATA,"|",12)
+    OFS.DTL.LIMIT.CHILD := ",CLASS.OF.CREDIT::="   : FIELD(Y.DATA,"|",13)
+    OFS.DTL.LIMIT.CHILD := ",PROJECT.LOCATE::="    : FIELD(Y.DATA,"|",14)
+    OFS.DTL.LIMIT.CHILD := ",TYPE.OF.USE::="       : FIELD(Y.DATA,"|",15)
+    OFS.DTL.LIMIT.CHILD := ",ECONOMIC.SECTOR::="   : FIELD(Y.DATA,"|",16)
+    OFS.DTL.LIMIT.CHILD := ",LOANS.CHARC::="       : FIELD(Y.DATA,"|",17)
+    OFS.DTL.LIMIT.CHILD := ",LBUS.TYPE.USE::="     : FIELD(Y.DATA,"|",18)
+    OFS.DTL.LIMIT.CHILD := ",NEW.EXTEND::="        : FIELD(Y.DATA,"|",19)
+    OFS.DTL.LIMIT.CHILD := ",PLAFOND.BFR::="       : FIELD(Y.DATA,"|",20)
+    OFS.DTL.LIMIT.CHILD := ",PLAOB.TYPE::="        : FIELD(Y.DATA,"|",21)
+    OFS.DTL.LIMIT.CHILD := ",PLAOB.DESC::="        : FIELD(Y.DATA,"|",22)
+    OFS.DTL.LIMIT.CHILD := ",IA.LOAN.CHARC::="     : FIELD(Y.DATA,"|",23)
+    OFS.DTL.LIMIT.CHILD := ",PK.NUMBER::="         : FIELD(Y.DATA,"|",24)
+    OFS.DTL.LIMIT.CHILD := ",FIRST.PK.DATE::="     : FIELD(Y.DATA,"|",25)
+    OFS.DTL.LIMIT.CHILD := ",LAST.PK.NUMBER::="    : FIELD(Y.DATA,"|",26)
+    OFS.DTL.LIMIT.CHILD := ",LAST.PK.DATE::="      : FIELD(Y.DATA,"|",27)
+    OFS.DTL.LIMIT.CHILD := ",BMPK.DIF.VALUE::="    : FIELD(Y.DATA,"|",28)
+    OFS.DTL.LIMIT.CHILD := ",BMPK.DIF.PRCTG::="    : FIELD(Y.DATA,"|",29)
+    OFS.DTL.LIMIT.CHILD := ",BMPK.NOTE::="         : FIELD(Y.DATA,"|",30)
+    OFS.DTL.LIMIT.CHILD := ",CATEGORY.BR::="       : FIELD(Y.DATA,"|",31)
+
+    Y.OFS.MESSAGE = OFS.HDR.LIMIT.CHILD : OFS.DTL.LIMIT.CHILD
+
+    CALL OFS.INITIALISE.SOURCE(Y.OFS.SOURCE, '', "LOG.ERROR")
+    CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+    Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+    WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+        RETURN
+    END
+
+    Y.OFS.RESPONSE.HDR = FIELD(Y.OFS.RESPONSE,",",1)
+    Y.FLAG.PROCESS     = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+
+    IF Y.FLAG.PROCESS NE '1' THEN
+        Y.FLAG.ERROR += 1
+        Y.RESPONSE.ERROR = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+        CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+        Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+    END
+
+    Y.TRANSACTION.ID = Y.LIMIT.CHILD.ID
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS.COLLATERAL.RIGHT:
+*-----------------------------------------------------------------------------
+    Y.OFS.VERSION    = "COLLATERAL.RIGHT,IDI.INP.FOS"
+    Y.GTS.MODE       = ""
+    Y.NO.OF.AUTH     = 0
+    Y.TRANSACTION.ID = ""
+
+    Y.HEADER         = FIELD(Y.DATA,"|",1)
+    Y.CUSTOMER.ID    = FIELD(Y.HEADER,"-",2)
+    Y.SEQ.LINK       = FIELD(Y.HEADER,"-",4)
+    Y.COLL.RIGHT.ID  = Y.CUSTOMER.ID : "." :Y.SEQ.LINK
+
+    SEL.COLL.RIGHT   = "SELECT ":FN.COLLATERAL.RIGHT:" WITH @ID LIKE ":Y.CUSTOMER.ID:"..."
+    CALL EB.READLIST(SEL.COLL.RIGHT,LIST.COLL.RIGHT,'',TOT.COLL.RIGHT,'')
+    Y.SEQ.COLL.RIGHT = TOT.COLL.RIGHT + 1
+
+    Y.DATA.MULTI     = FIELD(Y.DATA,Y.HEADER:"|",2)
+    Y.CNT.DATA.MULTI = DCOUNT(Y.DATA.MULTI,"|")
+    Y.CNT.DATA.MULTI = (Y.CNT.DATA.MULTI - 1) / 9
+
+    Y.FIX = 0
+    FOR Y.C = 1 TO Y.CNT.DATA.MULTI
+        Y.COLL.RIGHT.ID  = Y.CUSTOMER.ID : "." : Y.SEQ.COLL.RIGHT
+        OFS.HDR.COLL.RIGHT = Y.OFS.VERSION:'/I/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',':Y.COLL.RIGHT.ID:'/':Y.HEADER
+
+        OFS.DTL.COLL.RIGHT  = ",COLLATERAL.CODE::=" : FIELD(Y.DATA.MULTI,"|",Y.FIX+1)
+        OFS.DTL.COLL.RIGHT := ",LIMIT.REFERENCE::=" : Y.LIMIT.CHILD.ID
+        OFS.DTL.COLL.RIGHT := ",LIMIT.REF.CUST::="  : FIELD(Y.DATA.MULTI,"|",Y.FIX+3)
+        OFS.DTL.COLL.RIGHT := ",PERCENT.ALLOC::="   : FIELD(Y.DATA.MULTI,"|",Y.FIX+4)
+        OFS.DTL.COLL.RIGHT := ",VALIDITY.DATE::="   : FIELD(Y.DATA.MULTI,"|",Y.FIX+5)
+        OFS.DTL.COLL.RIGHT := ",REVIEW.DATE.FQU::=" : FIELD(Y.DATA.MULTI,"|",Y.FIX+6)
+        OFS.DTL.COLL.RIGHT := ",EXPIRY.DATE::="     : FIELD(Y.DATA.MULTI,"|",Y.FIX+7)
+        OFS.DTL.COLL.RIGHT := ",NOTES::="           : FIELD(Y.DATA.MULTI,"|",Y.FIX+8)
+        OFS.DTL.COLL.RIGHT := ",CUSTOMER::="        : FIELD(Y.DATA.MULTI,"|",Y.FIX+9)
+
+        Y.FIX += 9  ;*Total field mapping collateral right
+        Y.SEQ.COLL.RIGHT = Y.SEQ.COLL.RIGHT + 1
+
+        Y.OFS.MESSAGE = OFS.HDR.COLL.RIGHT : OFS.DTL.COLL.RIGHT
+
+        CALL OFS.INITIALISE.SOURCE(Y.OFS.SOURCE, '', "LOG.ERROR")
+        CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+        Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+        WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+            RETURN
+        END
+
+        Y.OFS.RESPONSE.HDR = FIELD(Y.OFS.RESPONSE,",",1)
+        Y.FLAG.PROCESS     = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+
+        IF Y.FLAG.PROCESS NE '1' THEN
+            Y.FLAG.ERROR += 1
+            Y.RESPONSE.ERROR = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+            CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+            Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+        END
+
+        Y.TRANSACTION.ID<1,-1>   = Y.COLL.RIGHT.ID
+        Y.COLL.RIGHT.ID.LIST<-1> = Y.COLL.RIGHT.ID
+    NEXT Y.C
+
+    RETURN
+
+*-----------------------------------------------------------------------------
+PROCESS.COLLATERAL:
+*-----------------------------------------------------------------------------
+    Y.OFS.VERSION    = "COLLATERAL,IDI.INP.FOS"
+    Y.GTS.MODE       = ""
+    Y.NO.OF.AUTH     = 0
+    Y.TRANSACTION.ID = ""
+
+    Y.HEADER         = FIELD(Y.DATA,"|",1)
+    Y.DATA.MULTI     = FIELD(Y.DATA,Y.HEADER:"|",2)
+    Y.CNT.COLL.RIGHT = DCOUNT(Y.COLL.RIGHT.ID.LIST,@FM)
+    Y.FIX = 0
+
+    FOR Y.D = 1 TO Y.CNT.COLL.RIGHT
+        Y.COLL.RIGHT.ID = Y.COLL.RIGHT.ID.LIST<Y.D>
+        SEL.COLL = "SELECT ":FN.COLLATERAL:" WITH @ID LIKE ":Y.COLL.RIGHT.ID:"..."
+        CALL EB.READLIST(SEL.COLL,LIST.COLL,'',TOT.COLL,'')
+        Y.SEQ.COLL = TOT.COLL + 1
+        Y.COLLATERAL.ID  = Y.COLL.RIGHT.ID : "." :Y.SEQ.COLL
+
+        OFS.HDR.COLL  = Y.OFS.VERSION:'/I/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',':Y.COLLATERAL.ID:'/':Y.HEADER
+
+        OFS.DTL.COLL  = ",COLLATERAL.TYPE::="    : FIELD(Y.DATA.MULTI,"|",Y.FIX+1)
+        OFS.DTL.COLL := ",DESCRIPTION::="        : FIELD(Y.DATA.MULTI,"|",Y.FIX+2)
+        OFS.DTL.COLL := ",COMPANY::="            : FIELD(Y.DATA.MULTI,"|",Y.FIX+3)
+        OFS.DTL.COLL := ",APPLICATION.ID::="     : FIELD(Y.DATA.MULTI,"|",Y.FIX+4)
+        OFS.DTL.COLL := ",CURRENCY::="           : FIELD(Y.DATA.MULTI,"|",Y.FIX+5)
+        OFS.DTL.COLL := ",COUNTRY::="            : FIELD(Y.DATA.MULTI,"|",Y.FIX+6)
+        OFS.DTL.COLL := ",NOMINAL.VALUE::="      : FIELD(Y.DATA.MULTI,"|",Y.FIX+7)
+        OFS.DTL.COLL := ",EXECUTION.VALUE::="    : FIELD(Y.DATA.MULTI,"|",Y.FIX+8)
+        OFS.DTL.COLL := ",CENTRAL.BANK.VALUE::=" : FIELD(Y.DATA.MULTI,"|",Y.FIX+9)
+        OFS.DTL.COLL := ",VALUE.DATE::="         : FIELD(Y.DATA.MULTI,"|",Y.FIX+10)
+        OFS.DTL.COLL := ",REVIEW.DATE.FQU::="    : FIELD(Y.DATA.MULTI,"|",Y.FIX+11)
+        OFS.DTL.COLL := ",EXPIRY.DATE::="        : FIELD(Y.DATA.MULTI,"|",Y.FIX+12)
+        OFS.DTL.COLL := ",ADDRESS::="            : FIELD(Y.DATA.MULTI,"|",Y.FIX+13)
+        OFS.DTL.COLL := ",COLL.RANK.LEVEL::="    : FIELD(Y.DATA.MULTI,"|",Y.FIX+14)
+        OFS.DTL.COLL := ",TYING.TYPE::="         : FIELD(Y.DATA.MULTI,"|",Y.FIX+15)
+        OFS.DTL.COLL := ",OWN.EVIDENCE::="       : FIELD(Y.DATA.MULTI,"|",Y.FIX+16)
+        OFS.DTL.COLL := ",SID.LOC.CODE::="       : FIELD(Y.DATA.MULTI,"|",Y.FIX+17)
+        OFS.DTL.COLL := ",FLAG.APPRAISAL::="     : FIELD(Y.DATA.MULTI,"|",Y.FIX+18)
+        OFS.DTL.COLL := ",IN.APPRAISER::="       : FIELD(Y.DATA.MULTI,"|",Y.FIX+19)
+        OFS.DTL.COLL := ",PARIPASU::="           : FIELD(Y.DATA.MULTI,"|",Y.FIX+20)
+        OFS.DTL.COLL := ",BI.ASURANCE::="        : "N"
+        OFS.DTL.COLL := ",CAPITAL::="            : FIELD(Y.DATA.MULTI,"|",Y.FIX+22)
+        OFS.DTL.COLL := ",COLL.ISSUER::="        : FIELD(Y.DATA.MULTI,"|",Y.FIX+23)
+        OFS.DTL.COLL := ",COLL.RATE.INST::="     : FIELD(Y.DATA.MULTI,"|",Y.FIX+24)
+        OFS.DTL.COLL := ",COLL.RATE.DATE::="     : FIELD(Y.DATA.MULTI,"|",Y.FIX+25)
+        OFS.DTL.COLL := ",COLL.ADMIN::="         : FIELD(Y.DATA.MULTI,"|",Y.FIX+26)
+        OFS.DTL.COLL := ",LBBU.COL.TYPE::="      : FIELD(Y.DATA.MULTI,"|",Y.FIX+27)
+        OFS.DTL.COLL := ",REV.DATE.FQU.BR::="    : FIELD(Y.DATA.MULTI,"|",Y.FIX+28)
+        OFS.DTL.COLL := ",MAX.VALUE.BR::="       : FIELD(Y.DATA.MULTI,"|",Y.FIX+29)
+
+        Y.FIX += 29 ;*Total field mapping collateral
+
+        Y.OFS.MESSAGE = OFS.HDR.COLL : OFS.DTL.COLL
+
+        CALL OFS.INITIALISE.SOURCE(Y.OFS.SOURCE, '', "LOG.ERROR")
+        CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+        Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+        WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+            RETURN
+        END
+
+        Y.OFS.RESPONSE.HDR = FIELD(Y.OFS.RESPONSE,",",1)
+        Y.FLAG.PROCESS     = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+
+        IF Y.FLAG.PROCESS NE '1' THEN
+            Y.FLAG.ERROR += 1
+            Y.RESPONSE.ERROR = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+            CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+            Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+        END
+
+        Y.TRANSACTION.ID<1,-1> = Y.COLLATERAL.ID
+        Y.COLL.ID.LIST<-1>     = Y.COLLATERAL.ID
+    NEXT Y.D
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS.ASSET.REGISTER:
+*-----------------------------------------------------------------------------
+    Y.DOWN.PAYMENT = FIELD(Y.DATA,"|",11)
+
+    Y.OFS.VERSION     = "IDCH.ASSET.REGISTER,IDI.MUR.FOS"
+    Y.GTS.MODE        = ""
+    Y.NO.OF.AUTH      = 0
+    Y.TRANSACTION.ID  = ""
+    Y.HEADER          = FIELD(Y.DATA,"|",1)
+
+    OFS.HDR.ASSET.REG  = Y.OFS.VERSION:'/I/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',/':Y.HEADER
+
+    OFS.DTL.ASSET.REG  = ",SHORT.DESC::="    : FIELD(Y.DATA,"|",2)
+    OFS.DTL.ASSET.REG := ",DESCRIPTION::="   : FIELD(Y.DATA,"|",3)
+    OFS.DTL.ASSET.REG := ",CUSTOMER.ID::="   : FIELD(Y.DATA,"|",4)
+    OFS.DTL.ASSET.REG := ",CURRENCY::="      : FIELD(Y.DATA,"|",5)
+    OFS.DTL.ASSET.REG := ",CUST.LIMIT::="    : Y.LIMIT.CHILD.ID
+    OFS.DTL.ASSET.REG := ",SUPPLIER.ID::="   : FIELD(Y.DATA,"|",7)
+    OFS.DTL.ASSET.REG := ",SUPPLIER.NAME::=" : FIELD(Y.DATA,"|",8)
+    OFS.DTL.ASSET.REG := ",SUPPLIER.ACCT::=" : FIELD(Y.DATA,"|",9)
+    OFS.DTL.ASSET.REG := ",ASSET.PRICE::="   : FIELD(Y.DATA,"|",10)
+    OFS.DTL.ASSET.REG := ",DOWN.PAYMENT::="  : FIELD(Y.DATA,"|",11)
+    OFS.DTL.ASSET.REG := ",ASSET.QTY::="     : FIELD(Y.DATA,"|",12)
+    OFS.DTL.ASSET.REG := ",HPP.ASSET::="     : FIELD(Y.DATA,"|",13)
+
+    Y.OFS.MESSAGE = OFS.HDR.ASSET.REG : OFS.DTL.ASSET.REG
+
+    CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+    Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+    WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+        RETURN
+    END
+
+    Y.OFS.RESPONSE.HDR  = FIELD(Y.OFS.RESPONSE,",",1)
+    Y.FLAG.PROCESS      = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+    Y.ASSET.REGISTER.ID = Y.OFS.RESPONSE['/',1,1]
+
+    IF Y.FLAG.PROCESS NE '1' THEN
+        Y.FLAG.ERROR += 1
+        Y.RESPONSE.ERROR = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+        CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+        Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+    END
+
+    Y.TRANSACTION.ID = Y.ASSET.REGISTER.ID
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS.PEMBIAYAAN:
+*-----------------------------------------------------------------------------
+
+    Y.SCHD.TYPE = FIELD(Y.DATA,"|",15)
+    IF Y.SCHD.TYPE EQ 5 THEN
+        GOSUB UPLOAD.IRREGULER
+    END
+
+    Y.OFS.VERSION    = "LD.LOANS.AND.DEPOSITS,IDI.MUR.FOS"
+    Y.GTS.MODE       = "1"
+    Y.NO.OF.AUTH     = ""
+    Y.TRANSACTION.ID = ""
+
+    OFS.HDR.LD  = Y.OFS.VERSION:'/I/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',/':Y.HEADER
+
+    OFS.DTL.LD  = ",CUSTOMER.ID::="      : FIELD(Y.DATA,"|",2)
+    OFS.DTL.LD := ",LIMIT.REFERENCE::="  : Y.LIMIT.CHILD.ID[7]
+    OFS.DTL.LD := ",CURRENCY::="         : FIELD(Y.DATA,"|",4)
+    OFS.DTL.LD := ",PROD.TYPE::="        : FIELD(Y.DATA,"|",5)
+
+    Y.ERROR.IRREGULER  = ""
+    Y.AMOUNT = FIELD(Y.DATA,"|",8)
+    IF Y.SCHD.TYPE EQ 5 THEN
+        IF NOT(Y.AMOUNT) THEN
+            OFS.DTL.LD := ",AMOUNT::="       : Y.PRINCIPAL
+            OFS.DTL.LD := ",ORIG.AMOUNT::="  : Y.PRINCIPAL
+        END ELSE
+            IF Y.PRINCIPAL NE Y.AMOUNT THEN
+                Y.ERROR.IRREGULER   = "AMOUNT IS DIFFERENT BETWEEN INPUTTED (": Y.AMOUNT :") AND UPLOADED (": Y.PRINCIPAL :")"
+            END
+        END
+        OFS.DTL.LD := ",TENOR::="        : Y.TENOR
+        OFS.DTL.LD := ",IRR.RATE::="     : Y.RATE
+
+        Y.MRG.AMT = FIELD(Y.DATA,"|",32)
+        IF Y.MRG.AMT THEN
+            OFS.DTL.LD := ",MRG.AMT::="  : FIELD(Y.DATA,"|",32)
+        END ELSE
+            OFS.DTL.LD := ",MRG.AMT::="  : Y.MARGIN
+        END
+
+        IF NOT(Y.RATE) THEN
+            OFS.DTL.LD := ",INTEREST.RATE::=" : Y.RATE
+        END ELSE
+            OFS.DTL.LD := ",INTEREST.RATE::=" : FIELD(Y.DATA,"|",30)
+        END
+    END ELSE
+        OFS.DTL.LD := ",AMOUNT::="       : Y.AMOUNT
+        OFS.DTL.LD := ",TENOR::="        : FIELD(Y.DATA,"|",14)
+        OFS.DTL.LD := ",INTEREST.RATE::=": FIELD(Y.DATA,"|",30)
+
+        Y.MRG.AMT = FIELD(Y.DATA,"|",32)
+        IF Y.MRG.AMT THEN
+            OFS.DTL.LD := ",MRG.AMT::="  : FIELD(Y.DATA,"|",32)
+        END
+    END
+
+    OFS.DTL.LD := ",CU.PORTION.AMT::="   : Y.DOWN.PAYMENT
+
+    OFS.DTL.LD := ",SCHD.TYPE::="        : Y.SCHD.TYPE
+    OFS.DTL.LD := ",PFT.SHR.METHOD::="   : "3"
+
+    OFS.DTL.LD := ",AGN.FLAG::="         : "Y"
+
+    IF FIELD(Y.DATA,"|",33) EQ '' THEN
+        OFS.DTL.LD := ",ATRB.FLAG::="        : "N"
+    END ELSE
+        OFS.DTL.LD := ",ATRB.FLAG::="        : FIELD(Y.DATA,"|",33)
+    END
+
+
+    Y.COLL.CODE     = Y.COLL.ID.LIST
+    Y.PERCENT.ALLOC = FIELD(Y.DATA,"|",43)
+    Y.CNT.COLL.CODE = DCOUNT(Y.COLL.CODE,@FM)
+    FOR Y.J = 1 TO Y.CNT.COLL.CODE
+        OFS.DTL.LD := ",COLL.CODE:":Y.J:":1="     : Y.COLL.CODE<Y.J>
+        OFS.DTL.LD := ",PERCENT.ALLOC:":Y.J:":1=" : FIELD(Y.PERCENT.ALLOC,"::",Y.J)
+    NEXT Y.J
+
+    OFS.DTL.LD := ",INST.DATE::="        : FIELD(Y.DATA,"|",3)
+
+    OFS.DTL.LD := ",IAR.REF::="          : Y.ASSET.REGISTER.ID
+    OFS.DTL.LD := ",SO.CODE::="          : FIELD(Y.DATA,"|",7)
+    OFS.DTL.LD := ",MIS.ACCT.OFFICER::=" : FIELD(Y.DATA,"|",9)
+    OFS.DTL.LD := ",ACCT.OFFICER::="     : FIELD(Y.DATA,"|",10)
+    OFS.DTL.LD := ",FAO.CODE::="         : FIELD(Y.DATA,"|",11)
+    OFS.DTL.LD := ",BM.CODE::="          : FIELD(Y.DATA,"|",12)
+    OFS.DTL.LD := ",ACCT.MAKERS::="      : FIELD(Y.DATA,"|",16)
+    OFS.DTL.LD := ",ACCT.DECISION::="    : FIELD(Y.DATA,"|",17)
+*    OFS.DTL.LD := ",FEE.AGENT::="        : FIELD(Y.DATA,"|",18)
+*    OFS.DTL.LD := ",AGENT.ACCT::="       : FIELD(Y.DATA,"|",19)
+    OFS.DTL.LD := ",NAP.NO::="           : FIELD(Y.DATA,"|",20)
+    OFS.DTL.LD := ",SEG.PROD::="         : FIELD(Y.DATA,"|",21)
+
+    OFS.DTL.LD := ",FILE.NAME::="        : Y.UPLOAD.ID
+    OFS.DTL.LD := ",CUST.ACCT::="        : FIELD(Y.DATA,"|",23)
+    OFS.DTL.LD := ",PRIN.LIQ.ACCT::="    : FIELD(Y.DATA,"|",24)
+    OFS.DTL.LD := ",INT.LIQ.ACCT::="     : FIELD(Y.DATA,"|",25)
+    OFS.DTL.LD := ",DRAWDOWN.ACCOUNT::=" : FIELD(Y.DATA,"|",24)
+    OFS.DTL.LD := ",FEE.PAY.ACCOUNT::="  : FIELD(Y.DATA,"|",24)
+
+    OFS.DTL.LD := ",WAKALAH.FLAG::="     : FIELD(Y.DATA,"|",26)
+
+    Y.MARGIN.TYPE = FIELD(Y.DATA,"|",27)
+    OFS.DTL.LD := ",MARGIN.TYPE::="      : Y.MARGIN.TYPE
+    IF Y.MARGIN.TYPE NE 1 THEN
+        OFS.DTL.LD := ",PERIODIC.RATE::=": FIELD(Y.DATA,"|",28)
+        OFS.DTL.LD := ",RATE.PERIOD::="  : FIELD(Y.DATA,"|",29)
+    END
+
+    OFS.DTL.LD := ",GRC.DURATION::="     : FIELD(Y.DATA,"|",31)
+*TIKA
+*OFS.DTL.LD := ",ATRB.FLAG::="        : FIELD(Y.DATA,"|",33)
+
+    Y.CHARGE.CODE  = FIELD(Y.DATA,"|",34)
+    Y.CHARGE.AMT   = FIELD(Y.DATA,"|",35)
+    Y.CNT.CHG.CODE = DCOUNT(Y.CHARGE.CODE,"::")
+    FOR Y.I = 1 TO Y.CNT.CHG.CODE
+        OFS.DTL.LD := ",CHARGE.CODE:":Y.I:":1="  : FIELD(Y.CHARGE.CODE,"::",Y.I)
+        OFS.DTL.LD := ",CHRG.AMT:":Y.I:":1="     : FIELD(Y.CHARGE.AMT,"::",Y.I)
+    NEXT Y.I
+*    OFS.DTL.LD := ",TOT.CHRG.AMT::="     : FIELD(Y.DATA,"|",36)
+    OFS.DTL.LD := ",CHRG.ACCT::="     : FIELD(Y.DATA,"|",37)
+
+    OFS.DTL.LD := ",STS.PENCAIRAN::="    : "1"
+    OFS.DTL.LD := ",NOTARY.NAME::="      : FIELD(Y.DATA,"|",38)
+    OFS.DTL.LD := ",INSR.NAME::="        : FIELD(Y.DATA,"|",39)
+    OFS.DTL.LD := ",KAP.NAME::="         : FIELD(Y.DATA,"|",40)
+
+    OFS.DTL.LD := ",STATUS.PEMBIAYA::="  : "20-Bkn dlm rangka restrukturisasi"
+    OFS.DTL.LD := ",COLL.AMT::="         : FIELD(Y.DATA,"|",45)
+    OFS.DTL.LD := ",LN.PROV.SUM::="      : FIELD(Y.DATA,"|",46)
+    OFS.DTL.LD := ",CLASS.OF.CREDIT::="  : FIELD(Y.DATA,"|",47)
+    OFS.DTL.LD := ",PORTFOLIO.CATEG::="  : FIELD(Y.DATA,"|",48)
+    OFS.DTL.LD := ",GUARANTOR.NAME::="   : FIELD(Y.DATA,"|",49)
+    OFS.DTL.LD := ",OW.SHARE.PRCNT::="   : FIELD(Y.DATA,"|",50)
+    OFS.DTL.LD := ",LEGAL.ID.NO::="      : FIELD(Y.DATA,"|",51)
+    OFS.DTL.LD := ",TAX.REG.NO::="       : FIELD(Y.DATA,"|",52)
+    OFS.DTL.LD := ",GUARANTOR.ADD::="    : FIELD(Y.DATA,"|",53)
+    OFS.DTL.LD := ",GUARANTOR.TYPE::="   : FIELD(Y.DATA,"|",54)
+    OFS.DTL.LD := ",PRIME.BANK::="       : FIELD(Y.DATA,"|",55)
+    OFS.DTL.LD := ",CONDITION::="        : FIELD(Y.DATA,"|",56)
+    OFS.DTL.LD := ",CONDITION.DATE::="   : FIELD(Y.DATA,"|",57)
+    OFS.DTL.LD := ",FREQ.INS::="         : FIELD(Y.DATA,"|",58)
+    OFS.DTL.LD := ",DEBTOR.PROB::="      : FIELD(Y.DATA,"|",59)
+    OFS.DTL.LD := ",GAS.CUS::="          : FIELD(Y.DATA,"|",60)
+    OFS.DTL.LD := ",STAGNANT.DATE::="    : FIELD(Y.DATA,"|",61)
+    OFS.DTL.LD := ",STAGNANT.REASON::="  : FIELD(Y.DATA,"|",62)
+    OFS.DTL.LD := ",ECONOMIC.SECTOR::="  : FIELD(Y.DATA,"|",63)
+    OFS.DTL.LD := ",TYPE.OF.USE::="      : FIELD(Y.DATA,"|",64)
+    OFS.DTL.LD := ",IJARA.ASET.TYPE::="  : ""
+    OFS.DTL.LD := ",PROJECT.LOCATE::="   : FIELD(Y.DATA,"|",66)
+
+    IF Y.ERROR.IRREGULER THEN
+        OFS.DTL.LD := ",RESERVED.1::=": Y.ERROR.IRREGULER   ;*Hanya untuk gagalkan ofs
+    END
+
+    Y.OFS.MESSAGE = OFS.HDR.LD : OFS.DTL.LD
+
+    CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+    Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+    WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+        RETURN
+    END
+
+    Y.LD.ID = Y.OFS.RESPONSE['/',1,1]
+
+    Y.OFS.RESPONSE.HDR = FIELD(Y.OFS.RESPONSE,",",1)
+    Y.FLAG.PROCESS     = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+
+    IF Y.FLAG.PROCESS NE '1' THEN
+        Y.FLAG.ERROR += 1
+        Y.RESPONSE.ERROR = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+        CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+        IF Y.ERROR.IRREGULER THEN
+            Y.ERROR.MESSAGE<-1> = Y.ERROR.IRREGULER
+        END ELSE
+            Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+        END
+    END
+
+    Y.TRANSACTION.ID = Y.LD.ID
+
+    GOSUB AUTHORIZE.LD
+
+    RETURN
+*-----------------------------------------------------------------------------
+AUTHORIZE.LD:
+*-----------------------------------------------------------------------------
+
+    IF Y.ERROR.IRREGULER THEN
+        RETURN
+    END
+
+    Y.OFS.VERSION    = "LD.LOANS.AND.DEPOSITS,IDI.MUR.FOS"
+    Y.GTS.MODE       = "1"
+    Y.NO.OF.AUTH     = ""
+
+    Y.OFS.MESSAGE    = Y.OFS.VERSION:'/A/PROCESS/':Y.GTS.MODE:'/':Y.NO.OF.AUTH:'/,//':ID.COMPANY:',':Y.LD.ID:'/':Y.HEADER
+
+    CALL OFS.INITIALISE.SOURCE(Y.OFS.SOURCE, '', "LOG.ERROR")
+    CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE, Y.OFS.RESPONSE, '')
+
+    Y.LOG     = "Message Request  : " : Y.OFS.MESSAGE : Y.CHAR : "Message Response : " : Y.OFS.RESPONSE
+
+    WRITESEQ Y.LOG APPEND TO F.FOLDER.LOG ELSE
+        RETURN
+    END
+
+    Y.OFS.RESPONSE.HDR = FIELD(Y.OFS.RESPONSE,",",1)
+    Y.FLAG.PROCESS     = FIELD(Y.OFS.RESPONSE.HDR,"/",3)
+
+    IF Y.FLAG.PROCESS NE '1' THEN
+        Y.FLAG.ERROR += 1
+        Y.RESPONSE.ERROR<-1> = FIELD(Y.OFS.RESPONSE,Y.OFS.RESPONSE.HDR:',',2)
+        CONVERT "," TO @SM IN Y.RESPONSE.ERROR
+        Y.ERROR.MESSAGE<-1> = Y.RESPONSE.ERROR
+    END
+
+    RETURN
+*-----------------------------------------------------------------------------
+UPLOAD.IRREGULER:
+*-----------------------------------------------------------------------------
+
+    Y.PRIN.AMOUNT = FIELD(Y.DATA,"|",67)
+    Y.INT.AMOUNT  = FIELD(Y.DATA,"|",68)
+
+    Y.CNT.SCHD = DCOUNT(Y.PRIN.AMOUNT,"::")
+
+    FOR Y.B = 1 TO Y.CNT.SCHD
+        Y.SCHD.PRIN    = FIELD(Y.PRIN.AMOUNT,"::",Y.B)
+        Y.SCHD.INT     = FIELD(Y.INT.AMOUNT,"::",Y.B)
+
+        Y.SCHD.DATE    = FIELD(Y.SCHD.PRIN,"!!",1)
+        Y.SCHD.AMOUNT  = FIELD(Y.SCHD.PRIN,"!!",2)
+        Y.SCHD.MARGIN  = FIELD(Y.SCHD.INT,"!!",2)
+
+        Y.SCHD.DATE.LIST<-1>   = Y.SCHD.DATE:@FM:Y.SCHD.DATE
+        Y.SCHD.TYPE.LIST<-1>   = "P":@FM:"I"
+        Y.SCHD.AMOUNT.LIST<-1> = Y.SCHD.AMOUNT:@FM:Y.SCHD.MARGIN
+
+        Y.MARGIN      += Y.SCHD.MARGIN
+        Y.PRINCIPAL   += Y.SCHD.AMOUNT
+
+        Y.TEXTFILE<-1> = "P":",":Y.SCHD.DATE:",":Y.SCHD.AMOUNT
+        Y.TEXTFILE<-1> = "I":",":Y.SCHD.DATE:",":Y.SCHD.MARGIN
+    NEXT Y.B
+
+    PRINT "Y.TEXTFILE : " : Y.TEXTFILE
+
+    CALL ALLOCATE.UNIQUE.TIME(Y.UNIQUE.TIME)
+    CONVERT "." TO "" IN Y.UNIQUE.TIME
+    Y.UNIQUE.TIME = TODAY[3,6]:Y.UNIQUE.TIME
+    Y.FILE.NAME   = OPERATOR:".":Y.UNIQUE.TIME:".csv"
+
+    WRITE Y.TEXTFILE TO F.FILE.PATH, Y.FILE.NAME
+
+    R.EB.FILE.UPLOAD<EB.UF.UPLOAD.TYPE>      = Y.UPLOAD.TYPE
+    R.EB.FILE.UPLOAD<EB.UF.SYSTEM.FILE.NAME> = Y.FILE.NAME
+    R.EB.FILE.UPLOAD<EB.UF.FILE.NAME>        = Y.FILE.NAME
+    R.EB.FILE.UPLOAD<EB.UF.DESCRIPTION>      = "Jadwal Irreguler Murchan"
+    R.EB.FILE.UPLOAD<EB.UF.TARGET.COMPANY>   = ID.COMPANY
+
+    X  = OCONV(DATE(),"D-")
+    DT = X[9,2]:X[1,2]:X[4,2]:TIME.STAMP[1,2]:TIME.STAMP[4,2]
+
+    R.EB.FILE.UPLOAD<EB.UF.CURR.NO>         += 1
+    R.EB.FILE.UPLOAD<EB.UF.INPUTTER>         = TNO:'_':OPERATOR
+    R.EB.FILE.UPLOAD<EB.UF.DATE.TIME>        = DT
+    R.EB.FILE.UPLOAD<EB.UF.AUTHORISER>       = TNO:'_':OPERATOR
+    R.EB.FILE.UPLOAD<EB.UF.CO.CODE>          = ID.COMPANY
+    R.EB.FILE.UPLOAD<EB.UF.DEPT.CODE>        = R.USER<6>
+
+    CALL IDC.AP.GET.NEXT.ID("EB.FILE.UPLOAD",Y.UPLOAD.ID)
+    CALL F.WRITE(FN.EB.FILE.UPLOAD,Y.UPLOAD.ID,R.EB.FILE.UPLOAD)
+
+    A1 = ''; A2 = ''; A3 = ''
+    DEFFUN FUNCTION.CALC.RATE(A1, A2, A3)
+
+    GOSUB SCHD.SORT
+    Y.LAST.SCH     = DCOUNT(Y.SCHD.DATE.LIST,@FM)
+    Y.FIN.MAT.DATE = Y.SCHD.DATE.LIST<Y.LAST.SCH>
+
+    GOSUB CALC.TENOR
+
+    GOSUB CALC.FLAT.RATE
+    GOSUB CALC.EFFECTIVE.RATE
+
+    RETURN
+*-----------------------------------------------------------------------------
+SCHD.SORT:
+*==========
+    Y.MAX.LOOP = DCOUNT(Y.SCHD.DATE.LIST,@FM)
+    FOR I = 1 TO (Y.MAX.LOOP - 1)
+        FOR J = (I+1) TO Y.MAX.LOOP
+            IF Y.SCHD.DATE.LIST<J> LT Y.SCHD.DATE.LIST<I> THEN
+                X.SCH.DATE   = Y.SCHD.DATE.LIST<J>
+                X.SCH.TYPE   = Y.SCHD.TYPE.LIST<J>
+                X.SCH.AMOUNT = Y.SCHD.AMOUNT.LIST<J>
+
+                Y.SCHD.DATE.LIST<J>   = Y.SCHD.DATE.LIST<I>
+                Y.SCHD.TYPE.LIST<J>   = Y.SCHD.TYPE.LIST<I>
+                Y.SCHD.AMOUNT.LIST<J> = Y.SCHD.AMOUNT.LIST<I>
+
+                Y.SCHD.DATE.LIST<I>   = X.SCH.DATE
+                Y.SCHD.TYPE.LIST<I>   = X.SCH.TYPE
+                Y.SCHD.AMOUNT.LIST<I> = X.SCH.AMOUNT
+            END
+        NEXT
+    NEXT
+
+    RETURN
+*-----------------------------------------------------------------------------
+CALC.TENOR:
+*==========
+    Y.TODAY = TODAY
+    SAVE.COMI =  COMI
+    COMI = Y.TODAY :'M01': Y.FIN.MAT.DATE[7,2]
+    Y.TENOR = 0
+    LOOP
+    WHILE COMI[1,6] NE Y.FIN.MAT.DATE[1,6]
+        CALL CFQ
+*20190903_Firsty
+        IF Y.TODAY[1,6] NE COMI[1,6] THEN
+            Y.TENOR += 1
+        END
+*20190903_Firsty
+    REPEAT
+
+    COMI = SAVE.COMI
+
+    RETURN
+*-----------------------------------------------------------------------------
+CALC.FLAT.RATE:
+*==============
+    Y.RATE = Y.MARGIN / Y.PRINCIPAL / Y.TENOR * 1200
+    Y.RATE = DROUND(Y.RATE, 4)
+
+    RETURN
+
+*-----------------------------------------------------------------------------
+CALC.EFFECTIVE.RATE:
+*===================
+    Y.DEC = 10
+    Y.RATE = DROUND(FUNCTION.CALC.RATE(Y.TENOR, Y.RATE, Y.DEC), 4)
+
+    RETURN
+*-----------------------------------------------------------------------------
+FINAL.UPDATE:
+*-----------------------------------------------------------------------------
+    LOCATE "-1" IN Y.OUTPUT.SIGN SETTING POS THEN
+        Y.CNT.PROC = DCOUNT(Y.OUTPUT.SIGN,@FM)
+        FOR Y.E = 1 TO POS
+            Y.OUT<-1> = Y.OUTPUT.SIGN<Y.E>
+        NEXT Y.E
+        FOR Y.F = POS+1 TO Y.CNT.PROC
+            Y.OUT<-1> = 0
+        NEXT Y.F
+
+        FOR Y.G = 1 TO Y.CNT.PROC
+            Y.SIGN     = Y.OUT<Y.G>
+            Y.DATA.OUT = Y.OUTPUT<Y.G>
+            Y.PREFIX   = FIELD(Y.DATA.OUT,"*",1)
+            Y.HEADER         = FIELD(FIELD(Y.DATA.OUT,"*",2),"|",1)
+            Y.FLAG.PROCESS   = FIELD(FIELD(Y.DATA.OUT,"*",2),"|",2)
+            Y.TRANSACTION.ID = FIELD(FIELD(Y.DATA.OUT,"*",2),"|",4)
+            Y.RESPONSE.ERROR = FIELD(FIELD(Y.DATA.OUT,"*",2),"|",5)
+
+            BEGIN CASE
+            CASE Y.SIGN EQ '0'
+                Y.FLAG = "Gagal - Tidak Dilanjutkan"
+                Y.RESPONSE.ERROR = ''
+                Y.FLAG.PROCESS = '-99'
+            CASE Y.SIGN EQ '1'
+                Y.FLAG = "Gagal - Tidak Jadi Diproses"
+                Y.FLAG.PROCESS = '1'
+                Y.RESPONSE.ERROR = ''
+            CASE Y.SIGN EQ '-1'
+                Y.FLAG = "Gagal"
+                CONVERT @SM TO "|" IN Y.RESPONSE.ERROR
+            END CASE
+
+            Y.FINAL.OUTPUT<-1>      = Y.PREFIX :"*": Y.HEADER :"|": Y.FLAG.PROCESS :"|":Y.FLAG:"|":Y.TRANSACTION.ID:"|":Y.RESPONSE.ERROR
+        NEXT Y.G
+        WRITE Y.FINAL.OUTPUT TO F.FOLDER.PROCESS.OUT, Y.IN
+    END ELSE
+        IF R.DATA.BACKUP THEN
+            OPENSEQ FN.FOLDER.PROCESS.OUT,Y.IN TO F.FOLDER.PROCESS.OUT ELSE
+                CREATE F.FOLDER.LOG ELSE
+                    RETURN
+                END
+            END
+
+            Y.FLAG.ERROR    = "-1"
+            Y.FLAG.PROCESS  = '-99'
+            Y.ERROR.MESSAGE = "DUPLICATE.TRAP"
+            Y.FLAG = "Textfile sudah pernah diproses"
+
+            CONVERT Y.CHAR TO @FM IN R.DATA.BACKUP
+            Y.CNT.DATA = DCOUNT(R.DATA.BACKUP,@FM)
+            FOR Y.H = 1 TO Y.CNT.DATA
+                Y.PREFIX   = FIELD(R.DATA.BACKUP<Y.H>,"*",1)
+                Y.DATA.BKP = FIELD(R.DATA.BACKUP<Y.H>,"*",2)
+                Y.HEADER   = FIELD(Y.DATA.BKP,"|",1)
+                Y.OUTPUT   = Y.PREFIX :"*": Y.HEADER :"|": Y.FLAG.PROCESS :"|":Y.FLAG:"|":Y.TRANSACTION.ID:"|"
+                WRITESEQ Y.OUTPUT APPEND TO F.FOLDER.PROCESS.OUT ELSE
+                    RETURN
+                END
+            NEXT Y.H
+        END ELSE
+            WRITE Y.OUTPUT TO F.FOLDER.PROCESS.OUT, Y.IN
+        END
+    END
+
+    IF NOT(R.DATA.BACKUP) THEN
+        CALL F.READ(FN.IDIL.UPLOAD.MUSMUT.FOS,Y.IN,R.IDIL.UPLOAD.MUSMUT.FOS,F.IDIL.UPLOAD.MUSMUT.FOS,READ.IDIL.FOS.ERR)
+
+        CONVERT @FM TO @VM IN Y.ERROR.MESSAGE
+
+        R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.FILE.NAME>        = Y.IN
+        R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.DATE>             = TODAY
+        R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.UPLOAD.COMPANY>   = ID.COMPANY
+
+        IF Y.FLAG.ERROR LE 0 THEN
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.STATUS>           = "SUCCESS"
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.LIMIT.PARENT>     = Y.LIMIT.PARENT.ID
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.LIMIT.CHILD>      = Y.LIMIT.CHILD.ID
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.COLLATERAL.RIGHT> = Y.COLL.RIGHT.ID
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.COLLATERAL>       = Y.COLLATERAL.ID
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.LOAN.REF>         = Y.LD.ID
+        END ELSE
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.STATUS>           = "ERROR"
+            R.IDIL.UPLOAD.MUSMUT.FOS<MUSMUT.FOS.ERROR.MESSAGE>    = Y.ERROR.MESSAGE
+        END
+
+        CALL F.WRITE(FN.IDIL.UPLOAD.MUSMUT.FOS,Y.IN,R.IDIL.UPLOAD.MUSMUT.FOS)
+*   Move to Backup Folder
+        Y.CMD = 'COPY FROM ':FN.FOLDER.PROCESS.IN:' TO ':FN.FOLDER.BACKUP:' "':Y.IN:'","':Y.IN:'.backup" OVERWRITING DELETING'
+        EXECUTE Y.CMD
+
+    END ELSE
+*   Move to Duplicate Folder
+        X  = OCONV(DATE(),"D-")
+        DT = X[9,2]:X[1,2]:X[4,2]:TIME.STAMP[1,2]:TIME.STAMP[4,2]
+
+        Y.CMD = 'COPY FROM ':FN.FOLDER.PROCESS.IN:' TO ':FN.FOLDER.DUPLICATE:' "':Y.IN:'","':Y.IN:'.DUP.':DT:'" OVERWRITING DELETING'
+        EXECUTE Y.CMD
+    END
+
+*-----------------------------------------------------------------------------
+END
+
+
+
+
+
+
+
+
+
+

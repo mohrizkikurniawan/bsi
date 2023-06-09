@@ -1,0 +1,114 @@
+*-----------------------------------------------------------------------------
+* <Rating>-28</Rating>
+*-----------------------------------------------------------------------------
+*Created by Fajar Julian Akbar
+*Date 17 July 2012
+*GET COLL DESC
+*-----------------------------------------------------------------------------
+* Modified By Eka Kurnia
+* Date 10 May 2019
+* CR Enhancement Gadai
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDI.GET.COLL.DESC(DSLIP.DATA)
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.COLLATERAL
+    $INSERT I_F.LD.LOANS.AND.DEPOSITS
+    $INSERT I_RHN.SLIP.COMMON
+
+    GOSUB INIT
+    GOSUB PROCESS
+    RETURN
+
+INIT:
+*---------
+
+    CALL GET.LOC.REF('LD.LOANS.AND.DEPOSITS','COLL.CODE',COLL.POS)
+    CALL GET.LOC.REF('COLLATERAL','COLL.DESC',DESC.POS)
+
+    FN.LD = "F.LD.LOANS.AND.DEPOSITS"
+    F.LD = ""
+    CALL OPF(FN.LD,F.LD)
+
+    FN.COLL = "F.COLLATERAL"
+    F.COLL = ""
+    CALL OPF(FN.COLL,F.COLL)
+
+    RETURN
+
+PROCESS:
+*--------
+
+    Y.LIST.AMT  = ""
+    Y.MAX       = 60
+    Y.TO        = 0
+    Y.DATA      = ""
+    Y.COLL.DATA = ""
+    Y.ID.LD     = DSLIP.DATA
+
+    CALL F.READ(FN.LD, DSLIP.DATA, R.LD, F.LD, LD.ERR)
+    Y.ID = R.LD<LD.LOCAL.REF,COLL.POS>
+
+    Y.CNT = DCOUNT(Y.ID, @SM)
+
+*\20190510-Eka Kurnia
+*   FOR I = 1 TO Y.CNT
+*       Y.COLL.ID = FIELD(Y.COLL.DATA,@SM,I)
+*       CALL F.READ(FN.COLL, Y.COLL.ID, R.COLL, F.COLL, COLL.ERR)
+*       Y.DESC = R.COLL<COLL.LOCAL.REF,DESC.POS>
+*       Y.MAX.VAL = R.COLL<COLL.MAXIMUM.VALUE>
+*
+*       Y.LIST.AMT<-1> = Y.MAX.VAL
+*
+*       Y.DATA<-1>= Y.DESC
+*   NEXT I
+
+    FOR Y.B = 1 TO Y.CNT
+        CALL F.READ(FN.COLL, Y.ID<1, 1, Y.B>, R.COLL, F.COLL, COLL.ERR)
+        Y.COL.DESC = R.COLL<COLL.LOCAL.REF, DESC.POS>
+        CONVERT SM TO ' ' IN Y.COL.DESC
+        Y.COLL.DATA<-1> = Y.COL.DESC
+    NEXT Y.B
+
+    CONVERT FM TO ',' IN Y.COLL.DATA
+
+    Y.CNT.DATA = LEN(Y.COLL.DATA)
+    B = DROUND((Y.CNT.DATA/Y.MAX), 0)
+
+    FOR I = 1 TO 5
+        Y.FROM = Y.TO + 1
+        Y.TO   = (I * Y.MAX) + (I - 1)
+
+        IF I GT 1 THEN
+            Y.DESC.DATA = Y.COLL.DATA[Y.FROM, 61]
+
+            IF Y.DESC.DATA EQ '' THEN
+                Y.DATA<-1> = SPACE(1)
+            END ELSE
+                Y.DATA<-1> = SPACE(1) : Y.DESC.DATA
+            END
+
+        END ELSE
+            Y.DESC.DATA = Y.COLL.DATA[Y.FROM, 60]
+
+            IF Y.DESC.DATA EQ '' THEN
+                Y.DATA = SPACE(1)
+            END ELSE
+                Y.DATA = Y.DESC.DATA
+            END
+        END
+    NEXT I
+*/20190510-Eka Kurnia
+
+    DSLIP.DATA = Y.DATA
+
+    RETURN
+END
+
+
+
+
+
+
+

@@ -1,0 +1,37 @@
+*-----------------------------------------------------------------------------
+* <Rating>-10</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDIB.ARC.MATCH.REVERSE.LOAD
+*------------------------------------------------------------------------------
+* Create by   : Ratih Purwaning Utami
+* Create Date : Feb 26, 2018
+* Description : Batch Routine for archive IDIH.IA.MATCH.REVERSE
+*-----------------------------------------------------------------------------
+* Modification History:-
+*-----------------------------------------------------------------------------
+* Date         :
+* Modified by  :
+* Description  :
+*-----------------------------------------------------------------------------
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_IDIB.ARC.MATCH.REVERSE.COMMON
+
+*------------------------------------------------------------------------------
+MAIN:
+*------------------------------------------------------------------------------
+    FN.IDIH.IA.MATCH.REVERSE = "F.IDIH.IA.MATCH.REVERSE"
+    F.IDIH.IA.MATCH.REVERSE  = ""
+    CALL OPF(FN.IDIH.IA.MATCH.REVERSE,F.IDIH.IA.MATCH.REVERSE)
+
+    FN.IDIH.IA.MATCH.REVERSE.HIS = "F.IDIH.IA.MATCH.REVERSE$HIS"
+    F.IDIH.IA.MATCH.REVERSE.HIS  = ""
+    CALL OPF(FN.IDIH.IA.MATCH.REVERSE.HIS,F.IDIH.IA.MATCH.REVERSE.HIS)
+
+    RETURN
+*------------------------------------------------------------------------------
+END
+
+
+
+

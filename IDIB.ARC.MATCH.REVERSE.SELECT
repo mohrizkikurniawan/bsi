@@ -1,0 +1,82 @@
+*-----------------------------------------------------------------------------
+* <Rating>-65</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDIB.ARC.MATCH.REVERSE.SELECT
+*------------------------------------------------------------------------------
+* Create by   : Ratih Purwaning Utami
+* Create Date : Feb 26, 2018
+* Description : Batch Routine for archive IDIH.IA.MATCH.REVERSE
+*-----------------------------------------------------------------------------
+* Modification History:-
+*-----------------------------------------------------------------------------
+* Date         :
+* Modified by  :
+* Description  :
+*-----------------------------------------------------------------------------
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_IDIB.ARC.MATCH.REVERSE.COMMON
+    $INSERT I_BATCH.FILES
+
+*------------------------------------------------------------------------------
+MAIN:
+*------------------------------------------------------------------------------
+    IF CONTROL.LIST EQ '' THEN
+        CONTROL.LIST<-1> = "MOVE.HISTORY"
+        CONTROL.LIST<-1> = "DELETE.HISTORY"
+    END
+
+    Y.CONTROL.LIST = CONTROL.LIST<1,1>
+    BEGIN CASE
+    CASE Y.CONTROL.LIST EQ "MOVE.HISTORY"
+        GOSUB SELECT.LIVE.FILE
+    CASE Y.CONTROL.LIST EQ "DELETE.HISTORY"
+        GOSUB SELECT.HIST.FILE
+    END CASE
+
+    RETURN
+*------------------------------------------------------------------------------
+SELECT.LIVE.FILE:
+*------------------------------------------------------------------------------
+    SEL.CMD = "SELECT ":FN.IDIH.IA.MATCH.REVERSE:" WITH OUTSTANDING.AMT EQ 0"
+    CALL EB.READLIST(SEL.CMD,SEL.LIST,'','','')
+    CALL BATCH.BUILD.LIST('',SEL.LIST)
+
+    RETURN
+*------------------------------------------------------------------------------
+SELECT.HIST.FILE:
+*------------------------------------------------------------------------------
+    IF BATCH.DETAILS<3,1> THEN
+*       Y.MONTH   = FMT(BATCH.DETAILS<3,1,1>,"R%2")
+*       SAVE.COMI = COMI
+*       COMI = TODAY :'M':Y.MONTH: TODAY[7, 2]
+*       Y.DATE    = COMI[3,6]
+*       COMI      = SAVE.COMI
+
+        CHECK.DATE   = TODAY
+        MONTH.PERIOD = BATCH.DETAILS<3,1,1>
+        Y.MONTH      = MONTH.PERIOD:"M"
+        CALL CALENDAR.DAY(CHECK.DATE,'-',Y.MONTH)
+        Y.DATE       = Y.MONTH[3,6]:"0000"
+
+        SEL.CMD = "SELECT ":FN.IDIH.IA.MATCH.REVERSE.HIS:" WITH DATE.TIME LT ":Y.DATE
+        CALL EB.READLIST(SEL.CMD,SEL.LIST,'','','')
+        CALL BATCH.BUILD.LIST('',SEL.LIST)
+    END
+
+    RETURN
+*------------------------------------------------------------------------------
+END
+
+
+
+
+
+
+
+
+
+
+
+
+

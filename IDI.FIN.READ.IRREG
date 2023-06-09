@@ -1,0 +1,280 @@
+*-----------------------------------------------------------------------------
+* <Rating>-75</Rating>
+*-----------------------------------------------------------------------------
+* Global Routine, in order to load irregular schedule using csv format
+* Created by Julian Gerry
+* Date : 11 May 2012
+* Format
+* sch.type,date,amount(, amount)
+*-----------------------------------------------------------------------------
+* History:
+* 20120530_Alvian : update read logic
+* 20121011_Gerry  : update read by PROD.TYPE, add read for Mudh wal Mur + Mudharabah
+* 20130222_yendri : add charge code for SCH.TYPE eq F and type eq mur
+* 20130422_Alvian : Validate amount to be written
+* 20130513_Aristya : add logic for mmq
+* 20130620_Alvian : Move charge code to parameter
+* 20170804_Eka    : Add condition based on CR Qardh
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDI.FIN.READ.IRREG
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.LD.LOANS.AND.DEPOSITS
+    $INSERT I_F.LD.SCHEDULE.DEFINE
+    $INSERT I_F.EB.FILE.UPLOAD
+    $INSERT I_F.EB.FILE.UPLOAD.TYPE
+    $INSERT I_FIN.COMMON
+    $INSERT I_F.IDIH.FIN.PROD.TYPE
+
+    GOSUB INITIALISE
+
+    RETURN
+
+*-----------------------------------------------------------------------------
+INITIALISE:
+*==========
+
+*---20121011_Gerry---
+    SCH.DATE = "" ; SCH.MARGIN = "" ; SCH.PRINCIPAL = "" ; SCH.POS = ""
+    LAST.MARGIN = "" ; LAST.PRIN = "" ; Y.POS = "" ; DUE.AMT = "" ; SCH.BAGHAS = ""
+    Y.APP = "LD.LOANS.AND.DEPOSITS":@FM:"IDIH.FIN.PROD.TYPE"
+    Y.F.NAME = "FILE.NAME" : @VM : "PROD.TYPE"
+    Y.F.NAME := @FM:"GROUP.PRODUCT": VM :'REST.CHG'         ;*Aristya_20130513
+    CALL MULTI.GET.LOC.REF(Y.APP, Y.F.NAME, Y.POS)
+    IF.POS = Y.POS<1, 1>
+    PROD.POS = Y.POS<1, 2>
+    GRP.PROD.POS = Y.POS<2, 1>          ;*Aristya_20130513
+    Y.REST.CHG.POS = Y.POS<2, 2>
+*/---20121011_Gerry---
+
+    FN.LD.NAU = 'F.LD.LOANS.AND.DEPOSITS$NAU' ; F.LD.NAU = '' ; R.LD.NAU = ''
+    CALL OPF(FN.LD.NAU, F.LD.NAU)
+
+    FN.EB.FILE.UPLOAD = 'F.EB.FILE.UPLOAD'
+    F.EB.FILE.UPLOAD = ''
+    CALL OPF(FN.EB.FILE.UPLOAD, F.EB.FILE.UPLOAD)
+
+*Aristya_20130513
+    FN.PROD.TYPE = 'F.IDIH.FIN.PROD.TYPE'
+    F.PROD.TYPE = ''
+    CALL OPF(FN.PROD.TYPE,F.PROD.TYPE)
+*/Aristya_20130513
+
+    CALL F.READ(FN.LD.NAU, ID.NEW, R.LD.NAU, F.LD.NAU, LD.NAU.ERR)
+    Y.FILE = R.LD.NAU<LD.LOCAL.REF, IF.POS>
+*Aristya_20130513
+    IF R.LD.NAU<LD.LOCAL.REF, PROD.POS> THEN
+        CALL F.READ(FN.PROD.TYPE,R.LD.NAU<LD.LOCAL.REF, PROD.POS>,R.PROD.TYPE,F.PROD.TYPE,PROD.TYPE.ERR)
+        Y.GRP.PRD = UPCASE(R.PROD.TYPE<FIN.TYP.LOCAL.REF, GRP.PROD.POS>)
+*/Aristya_20130513
+        Y.CHARGE.CODE = R.PROD.TYPE<FIN.TYP.LOCAL.REF, Y.REST.CHG.POS>
+    END
+
+    CALL F.READ(FN.EB.FILE.UPLOAD, Y.FILE, R.EB.FILE.UPLOAD, F.EB.FILE.UPLOAD, Y.ERR)
+    CALL DBR('EB.FILE.UPLOAD.TYPE':FM:EB.UT.UPLOAD.DIR,R.EB.FILE.UPLOAD<EB.UF.UPLOAD.TYPE>,Y.DIR.NAME)
+
+    Y.MIN.CTR = 0
+
+    FN.SOURCE.IN = FIELD(Y.DIR.NAME, '\', 2)
+    Y.FILE.NAME = R.EB.FILE.UPLOAD<EB.UF.SYSTEM.FILE.NAME>
+    F.SOURCE.IN = "" ; R.SOURCE = ""
+    OPEN FN.SOURCE.IN TO F.SOURCE.IN  THEN
+        GOSUB PROCESS
+    END
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROCESS:
+*=======
+
+    CALL F.READ(FN.SOURCE.IN, Y.FILE.NAME, R.SOURCE, F.SOURCE.IN, ERR1)
+    Y.CNT = DCOUNT(R.SOURCE, @FM)
+
+*---20121011_Gerry---
+    BEGIN CASE
+    CASE R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MUR" OR R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "IJR" OR R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "IMB" OR R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "IST"
+        GOSUB PROC.MUR
+    CASE R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MWM"
+        GOSUB PROC.MWM
+    CASE R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MUD" OR R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MUS" OR R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MUT"
+        GOSUB PROC.MUD
+*Aristya_20130513
+    CASE R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MQN" OR R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MQF" OR R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "MMS"
+        IF Y.GRP.PRD EQ 'MUR' OR R.LD.NAU<LD.LOCAL.REF, PROD.POS> EQ 'MQF0001' THEN
+            GOSUB PROC.MUR
+        END ELSE
+            GOSUB PROC.MUD
+        END
+*/Aristya_20130513
+*>20170804_Eka
+    CASE R.LD.NAU<LD.LOCAL.REF, PROD.POS>[1,3] EQ "QRU"
+        GOSUB PROC.QRU
+*<20170804_Eka
+    END CASE
+*/---20121011_Gerry---
+
+    RETURN
+*-----------------------------------------------------------------------------
+PROC.MUR:
+*========
+
+    FOR I = 1 TO Y.CNT
+        IF FIELD(R.SOURCE<I>, ",", 3) THEN
+            R.NEW(LD.SD.SCH.TYPE)<1, I-Y.MIN.CTR> = UPCASE(FIELD(R.SOURCE<I>, ",", 1))
+            R.NEW(LD.SD.DATE)<1, I-Y.MIN.CTR> = FIELD(R.SOURCE<I>, ",", 2)
+            R.NEW(LD.SD.AMOUNT)<1, I-Y.MIN.CTR> = FIELD(R.SOURCE<I>, ",", 3)
+*<20130222-yendri
+            IF R.NEW(LD.SD.SCH.TYPE)<1, I-Y.MIN.CTR> EQ 'F' THEN
+                R.NEW(LD.SD.CHARGE.CODE)<1, I-Y.MIN.CTR> = Y.CHARGE.CODE
+            END
+        END ELSE
+            Y.MIN.CTR += 1
+        END
+*>
+    NEXT I
+
+    RETURN
+*-----------------------*---20121011_Gerry-----------------------------------
+PROC.MWM:
+*========
+
+    FOR I = 1 TO Y.CNT
+        IF FIELD(R.SOURCE<I>, ",", 3) THEN
+            R.NEW(LD.SD.SCH.TYPE)<1, I-Y.MIN.CTR> = UPCASE(FIELD(R.SOURCE<I>, ",", 1))
+            R.NEW(LD.SD.DATE)<1, I-Y.MIN.CTR> = FIELD(R.SOURCE<I>, ",", 2)
+            R.NEW(LD.SD.AMOUNT)<1, I-Y.MIN.CTR> = FIELD(R.SOURCE<I>, ",", 3)
+            LOCATE R.NEW(LD.SD.DATE)<1, I-Y.MIN.CTR> IN SCH.DATE<1,1> SETTING SCH.POS ELSE
+                SCH.POS = DCOUNT(SCH.DATE, @VM) + 1
+                SCH.DATE<1, SCH.POS> = R.NEW(LD.SD.DATE)<1, I-Y.MIN.CTR>
+            END
+            IF R.NEW(LD.SD.SCH.TYPE)<1, I-Y.MIN.CTR> EQ 'P' THEN
+                SCH.PRINCIPAL<1, SCH.POS> = R.NEW(LD.SD.AMOUNT)<1, I-Y.MIN.CTR>
+                LAST.PRIN<1, SCH.POS> = FIELD(R.SOURCE<I>, ",", 4)
+            END ELSE
+                SCH.MARGIN<1, SCH.POS> = R.NEW(LD.SD.AMOUNT)<1, I-Y.MIN.CTR>
+                LAST.MARGIN<1, SCH.POS> = FIELD(R.SOURCE<I>, ",", 4)
+            END
+        END ELSE
+            Y.MIN.CTR += 1
+        END
+    NEXT I
+
+    RETURN
+*----------------------------------------------------------------------------
+PROC.MUD:
+*========
+
+    FOR I = 1 TO Y.CNT
+        IF FIELD(R.SOURCE<I>, ",", 1) THEN
+            SCH.DATE<1, 1, -1> = FIELD(R.SOURCE<I>, ",", 1)
+*        R.NEW(LD.SD.RESERVED1)<1,1,I> = FIELD(R.SOURCE<I>, ",", 1)
+            IF FIELD(R.SOURCE<I>, ",", 2) GT 0 THEN
+                R.NEW(LD.SD.SCH.TYPE)<1, -1> = "P"
+                R.NEW(LD.SD.DATE)<1, -1> = FIELD(R.SOURCE<I>, ",", 1)
+                R.NEW(LD.SD.AMOUNT)<1, -1> = FIELD(R.SOURCE<I>, ",", 2)
+                SCH.PRINCIPAL<1, 1, -1> = FIELD(R.SOURCE<I>, ",", 2)
+*            R.NEW(LD.SD.RESERVED1)<1,2,I> = FIELD(R.SOURCE<I>, ",", 2)
+            END ELSE
+                SCH.PRINCIPAL<1, 1, -1> = 0
+*            R.NEW(LD.SD.RESERVED1)<1,2,I> = 0
+            END
+
+            IF FIELD(R.SOURCE<I>, ",", 3) GT 0 THEN
+                SCH.MARGIN<1, 1, -1> = FIELD(R.SOURCE<I>, ",", 3)
+*            R.NEW(LD.SD.RESERVED1)<1,3,I> = FIELD(R.SOURCE<I>, ",", 3)
+            END ELSE
+                SCH.MARGIN<1, 1, -1> = 0
+*            R.NEW(LD.SD.RESERVED1)<1,3,I> = 0
+            END
+
+            IF FIELD(R.SOURCE<I>, ",", 4) GT 0 THEN
+                SCH.BAGHAS<1, -1> = FIELD(R.SOURCE<I>, ",", 4)
+            END ELSE
+                SCH.BAGHAS<1,  -1> = 0
+            END
+        END
+    NEXT I
+
+    R.NEW(LD.SD.RESERVED1) = SCH.DATE : "|" : SCH.PRINCIPAL : "|" : SCH.MARGIN
+    IF SUM(SCH.BAGHAS) NE 0 THEN
+        R.NEW(LD.SD.RESERVED2) = "||" : LOWER(SCH.BAGHAS)
+    END
+
+    RETURN
+*-----------------------*/---20121011_Gerry----------------------------------
+PROC.QRU:
+*========
+    Y.SCH.DATE = ""
+    Y.SCH.TYPE = ""
+
+    FOR Y.LOOP2 = 1 TO Y.CNT
+        Y.SRC.DATE       = FIELD(R.SOURCE<Y.LOOP2>, ',', 1)
+        Y.SCH.AMOUNT.FEE = FIELD(R.SOURCE<Y.LOOP2>, ',', 3)
+        Y.SCH.DATE<-1>   = FIELD(R.SOURCE<Y.LOOP2>, ',', 1)
+
+        IF NOT(Y.SCH.AMOUNT.FEE) THEN
+            Y.SCH.AMOUNT<-1> = FIELD(R.SOURCE<Y.LOOP2>, ',', 2)
+            Y.SCH.TYPE<-1>   = 'P'
+        END ELSE
+            Y.SCH.AMOUNT<-1> = FIELD(R.SOURCE<Y.LOOP2>, ',', 2) : VM : FIELD(R.SOURCE<Y.LOOP2>, ',', 3)
+            Y.SCH.TYPE<-1>   = 'P' : VM : 'F'
+        END
+    NEXT Y.LOOP2
+
+    Y.MAX.LOOP  = COUNT(Y.SCH.DATE, FM)
+    Y.MAX.LOOP3 = Y.MAX.LOOP - 1
+
+    T1 = "1" : FM : "DAYS"
+
+    FOR Y.LOOP3 = 1 TO Y.MAX.LOOP3
+        Y.CNT.LOOP3 = Y.LOOP3 + 1
+
+        FOR Y.LOOP4 = Y.CNT.LOOP3 TO Y.MAX.LOOP
+            IF Y.SCH.DATE<Y.LOOP4> LE Y.SCH.DATE<Y.LOOP3> THEN
+                X.SCH.DATE   = Y.SCH.DATE<Y.LOOP4>
+                X.SCH.TYPE   = Y.SCH.TYPE<Y.LOOP4>
+                X.SCH.AMOUNT = Y.SCH.AMOUNT<Y.LOOP4>
+
+                Y.SCH.DATE<Y.LOOP4>   = Y.SCH.DATE<Y.LOOP3>
+                Y.SCH.TYPE<Y.LOOP4>   = Y.SCH.TYPE<Y.LOOP3>
+                Y.SCH.AMOUNT<Y.LOOP4> = Y.SCH.AMOUNT<Y.LOOP3>
+
+                Y.SCH.DATE<Y.LOOP3>   = X.SCH.DATE
+                Y.SCH.TYPE<Y.LOOP3>   = X.SCH.TYPE
+                Y.SCH.AMOUNT<Y.LOOP3> = X.SCH.AMOUNT
+            END
+        NEXT Y.LOOP4
+    NEXT Y.LOOP3
+
+    GOSUB WRITE.QRU
+
+    RETURN
+*-----------------------*/---20170804_Eka----------------------------------
+WRITE.QRU:
+*=========
+    Y.CTR = 0
+    Y.CHARGE.CODE = "2"
+
+    FOR I = 1 TO Y.CNT
+        Y.CNT.TYPE = DCOUNT(Y.SCH.TYPE<I>, VM)
+        IF Y.CNT.TYPE GT 1 THEN
+            FOR J = 1 TO Y.CNT.TYPE
+                R.NEW(LD.SD.SCH.TYPE)<1, -1> = Y.SCH.TYPE<I, J>
+                R.NEW(LD.SD.DATE)<1, -1>     = Y.SCH.DATE<I>
+                R.NEW(LD.SD.AMOUNT)<1, -1>   = Y.SCH.AMOUNT<I, J>
+                IF Y.SCH.TYPE<I, J> EQ 'F' THEN
+                    R.NEW(LD.SD.CHARGE.CODE)<1,I+1> = Y.CHARGE.CODE
+                END
+            NEXT J
+        END ELSE
+            R.NEW(LD.SD.SCH.TYPE)<1, -1>    = Y.SCH.TYPE<I>
+            R.NEW(LD.SD.DATE)<1, -1>        = Y.SCH.DATE<I>
+            R.NEW(LD.SD.AMOUNT)<1, -1>      = Y.SCH.AMOUNT<I>
+        END
+    NEXT I
+
+    RETURN
+*-----------------------*/---20170804_Eka----------------------------------
+END
+

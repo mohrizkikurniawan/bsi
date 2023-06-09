@@ -1,0 +1,74 @@
+*-----------------------------------------------------------------------------
+* <Rating>-30</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDIB.ARC.MATCH.REVERSE(Y.ID.IAMR)
+*------------------------------------------------------------------------------
+* Create by   : Ratih Purwaning Utami
+* Create Date : Feb 26, 2018
+* Description : Batch Routine for archive IDIH.IA.MATCH.REVERSE
+*-----------------------------------------------------------------------------
+* Modification History:-
+*-----------------------------------------------------------------------------
+* Date         :
+* Modified by  :
+* Description  :
+*-----------------------------------------------------------------------------
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.IDIH.IA.MATCH.REVERSE
+    $INSERT I_IDIB.ARC.MATCH.REVERSE.COMMON
+    $INSERT I_BATCH.FILES
+
+*------------------------------------------------------------------------------
+MAIN:
+*------------------------------------------------------------------------------
+    IF CONTROL.LIST EQ '' OR CONTROL.LIST EQ 0 THEN
+        CONTROL.LIST<-1> = "MOVE.HISTORY"
+        CONTROL.LIST<-1> = "DELETE.HISTORY"
+    END
+
+    Y.CONTROL.LIST = CONTROL.LIST<1,1>
+    BEGIN CASE
+    CASE Y.CONTROL.LIST EQ "MOVE.HISTORY"
+        GOSUB MOVE.HISTORY
+    CASE Y.CONTROL.LIST EQ "DELETE.HISTORY"
+        GOSUB DELETE.HISTORY
+    END CASE
+
+    RETURN
+*------------------------------------------------------------------------------
+MOVE.HISTORY:
+*------------------------------------------------------------------------------
+    CALL F.READ(FN.IDIH.IA.MATCH.REVERSE,Y.ID.IAMR,R.IAMR,F.IDIH.IA.MATCH.REVERSE,READ.IAMR.ERR)
+    R.IAMR.HIS = R.IAMR
+
+    X = OCONV(DATE(),"D-")
+    DT = X[9,2]:X[1,2]:X[4,2]:TIME.STAMP[1,2]:TIME.STAMP[4,2]
+
+    R.IAMR.HIS<IA.MAT.REV.DATE.TIME>       = DT
+
+    CALL F.WRITE(FN.IDIH.IA.MATCH.REVERSE.HIS,Y.ID.IAMR:';1',R.IAMR.HIS)
+    CALL F.DELETE(FN.IDIH.IA.MATCH.REVERSE,Y.ID.IAMR)
+
+    RETURN
+*------------------------------------------------------------------------------
+DELETE.HISTORY:
+*------------------------------------------------------------------------------
+
+    CALL F.DELETE(FN.IDIH.IA.MATCH.REVERSE.HIS,Y.ID.IAMR)
+
+    RETURN
+*------------------------------------------------------------------------------
+END
+
+
+
+
+
+
+
+
+
+
+
+

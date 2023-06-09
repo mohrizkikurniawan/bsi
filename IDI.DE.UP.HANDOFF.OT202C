@@ -1,0 +1,67 @@
+*-----------------------------------------------------------------------------
+* <Rating>-22</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDI.DE.UP.HANDOFF.OT202C(MAT HANDOFF.REC,ERR.MSG)
+*----------------------------------------------------------------------------------
+* add to DE.MAPPING>202C.FT.1 for outgoing MT103
+* 19 Aug 2010 - Siriwan
+*
+* INPUT : HANDOFF.REC
+* OUTPUT : ERR.MSG
+*----------------------------------------------------------------------------------
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.FUNDS.TRANSFER
+
+    CALL GET.LOC.REF("FUNDS.TRANSFER","TAG72.INFO",TAG.POS)
+    CALL GET.LOC.REF("FUNDS.TRANSFER","BEN.OUR.SHA",BEN.POS)
+    BEN.OUR.SHA = R.NEW(FT.LOCAL.REF)<1,BEN.POS>
+
+*   HANDOFF.REC(9)<2> = HANDOFF.REC(2)<27>        ;* TAG32A AMOUNT
+    HANDOFF.REC(9)<2> = HANDOFF.REC(1)<70>        ;* TAG32A AMOUNT ;*-----EKA/20171128
+    HANDOFF.REC(9)<3> = HANDOFF.REC(2)<98>        ;* TAG33B B.CURRENCY
+    HANDOFF.REC(9)<4> = HANDOFF.REC(2)<99>        ;* TAG33B B.AMOUNT ;* ----HISTORY
+
+    IF HANDOFF.REC(1)<1> = 'OT03' AND ID.NEW[1,2] = 'FT' THEN
+*        HANDOFF.REC(2)<99> = HANDOFF.REC(9)<2>    ;* TAG33B B.AMOUNT ;* ----RATIH/20140910
+        HANDOFF.REC(2)<99> = HANDOFF.REC(1)<70>   ;* TAG33B B.AMOUNT ;* ----EKA/20171128
+*20120114_ALVIAN
+*   IF BEN.OUR.SHA <> "BEN" AND BEN.OUR.SHA THEN
+*      HANDOFF.REC(9)<1> = HANDOFF.REC(2)<61>
+*      HANDOFF.REC(9)<2> = HANDOFF.REC(2)<27>
+*      HANDOFF.REC(9)<3> = HANDOFF.REC(2)<98>
+*      HANDOFF.REC(9)<4> = HANDOFF.REC(2)<99>
+*      HANDOFF.REC(2)<27> = HANDOFF.REC(1)<14> ;* TAG32A AMOUNT
+*      HANDOFF.REC(2)<98> = ""
+*      HANDOFF.REC(2)<99> = ""
+*      HANDOFF.REC(2)<61> = BEN.OUR.SHA
+*   END
+*/20120114_ALVIAN
+
+*-- tag53 : change system default field to local field
+        IF HANDOFF.REC(2)<69> THEN
+            SAV.REC.2.69 = HANDOFF.REC(2)<69>     ;* SENDER C/D
+            SAV.REC.2.59 = HANDOFF.REC(2)<59>     ;* SENDER BANK ACC
+            SAV.REC.2.42 = HANDOFF.REC(2)<42>     ;* SENDER BANK CUS
+            HANDOFF.REC(2)<69> = ''
+            HANDOFF.REC(2)<59> = ''
+            HANDOFF.REC(2)<42> = HANDOFF.REC(1)<67,147>
+        END
+
+        HANDOFF.REC(2)<100> = ''
+        IF R.NEW(FT.LOCAL.REF)<1,TAG.POS> THEN
+            HANDOFF.REC(2)<100> = RAISE(R.NEW(FT.LOCAL.REF)<1,TAG.POS>)
+        END
+
+    END
+
+    RETURN
+*----------------------------------------------------------------------------------
+END
+
+
+
+
+
+
+

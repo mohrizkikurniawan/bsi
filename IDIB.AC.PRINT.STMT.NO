@@ -1,0 +1,76 @@
+*-----------------------------------------------------------------------------
+* <Rating>-41</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDIB.AC.PRINT.STMT.NO(Y.AC.ID)
+*-----------------------------------------------------------------------------
+* Developer Name    : Ratih Purwaning
+* Development Date  : 22 November 2017
+* Description       : Batch Routine to update PRINT.STMT
+*-----------------------------------------------------------------------------
+* Modification History:-
+*-----------------------------------------------------------------------------
+* Date              :
+* Modified by       :
+* Description       :
+* No Log            :
+*-----------------------------------------------------------------------------
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_IDIB.AC.PRINT.STMT.NO.COMMON
+    $INSERT I_F.ACCOUNT.STATEMENT
+
+*-----------------------------------------------------------------------------
+MAIN.PROCESS:
+*============
+    GOSUB INITIALIZE
+    GOSUB PROCESS
+
+    RETURN
+*-----------------------------------------------------------------------------
+INITIALIZE:
+*==============
+    Y.OFS.DTL      = ""
+    Y.OFFLINE.FLAG = ""
+    Y.OFS.SOURCE   = "GENERIC.OFS.PROCESS"
+    Y.OFS.LOG.NAME = "STMT.PRINT.NO"
+
+    RETURN
+
+*-----------------------------------------------------------------------------
+PROCESS:
+*==========
+    CALL F.READ (FN.ACCOUNT.STATEMENT, Y.AC.ID, R.ACCOUNT.STATEMENT, F.ACCOUNT.STATEMENT, ERR.AS)
+    IF R.ACCOUNT.STATEMENT THEN
+        Y.VERSION  = "ACCOUNT.STATEMENT,OFS"
+        Y.FUNCTION = "I"
+        Y.COMPANY  = R.ACCOUNT.STATEMENT<AC.STA.CO.CODE>
+
+        Y.OFS.HDR  = Y.VERSION:'/':Y.FUNCTION:'/':'PROCESS,//':Y.COMPANY:',':Y.AC.ID
+        Y.OFS.DTL  = ",PRINT.STMT=NO"
+
+*        Y.OFS = "PRINT.STMT"
+*        Y.VAL = "NO"
+*        Y.CNT = DCOUNT(Y.OFS,@VM)
+*        FOR Y.I = 1 TO Y.CNT
+*            Y.FIELD.OFS = Y.OFS<1,Y.I>
+*            Y.FIELD.VAL = Y.VAL<1,Y.I>
+*            Y.OFS.DTL   := ',':Y.FIELD.OFS:':1:1=':Y.FIELD.VAL
+*        NEXT Y.I
+*
+*        OFS.MSG = Y.OFS.HDR : Y.OFS.DTL
+*        Y.OPTION = ""
+*        CALL OFS.POST.MESSAGE(OFS.MSG, '', OFS.SRC.ID, Y.OPTION)
+
+        Y.OFS.MESSAGE = Y.OFS.HDR : Y.OFS.DTL
+        CALL OFS.INITIALISE.SOURCE(Y.OFS.SOURCE,Y.OFFLINE.FLAG,Y.OFS.LOG.NAME)
+        CALL OFS.BULK.MANAGER(Y.OFS.MESSAGE,Y.OFS.RESPONSE,Y.OFS.MESSAGE.COMMIT)
+    END
+
+    RETURN
+*-----------------------------------------------------------------------------
+END
+
+
+
+

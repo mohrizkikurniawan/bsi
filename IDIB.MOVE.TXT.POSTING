@@ -1,0 +1,104 @@
+*-----------------------------------------------------------------------------
+* <Rating>-60</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDIB.MOVE.TXT.POSTING
+*-----------------------------------------------------------------------------
+* Batch routine to move txt payroll
+* Created by Hamka Ardyansah
+* Date : 31 Maret 2022
+*-----------------------------------------------------------------------------
+* History update
+* Name  : moh rizki kurniawan
+* Date  : 08 Mei 2023
+* Desc  : - change CALL F.WRITE to WRITE
+*         - change CALL F.DELTE to DELETE
+*-----------------------------------------------------------------------------
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.BATCH
+    $INSERT I_BATCH.FILES
+    $INSERT I_F.TSA.SERVICE
+    $INSERT I_BATCH.FILES
+
+
+    Y.COUNT.BATCH.DATA =DCOUNT(BATCH.DETAILS<3,1>,SM)
+
+    Y.FILENAME = FIELD(BATCH.DETAILS<3,1>,SM,Y.COUNT.BATCH.DATA)
+
+    FOR Y.A = 1 TO Y.COUNT.BATCH.DATA-1
+        Y.PATH := FIELD(BATCH.DETAILS<3,1>,SM,Y.A)
+    NEXT Y.A
+
+
+    Y.FOLDER.PROC.OUT = Y.PATH:'/PROCESS/OUT'
+    Y.FOLDER.OUT = Y.PATH:'/OUT'
+    Y.FOLDER.PROC.BACKUP = Y.PATH:'/RESPON'
+
+    CALL OPF(Y.FOLDER.OUT,F.FOL1)
+    CALL OPF(Y.FOLDER.PROC.BACKUP,F.FOL2)
+
+    Y.C = DCOUNT(Y.PATH,"/")
+
+    IF Y.C GT 2 THEN
+        Y.APPL = FIELD(Y.PATH,"/",Y.C-2,2)
+    END ELSE
+        Y.APPL = FIELD(Y.PATH,"/",Y.C-1,1)
+    END
+
+    CONVERT "/" TO "." IN Y.APPL
+    Y.TABLE.TEMP = 'F.':Y.APPL:'.TEMP'
+
+    FN.POSTING.SPAN.TEMP = Y.TABLE.TEMP
+    F.POSTING.SPAN.TEMP  = ""
+    CALL OPF(FN.POSTING.SPAN.TEMP,F.POSTING.SPAN.TEMP)
+
+    OPEN Y.FOLDER.PROC.OUT TO F.PROC.OUT ELSE
+        PRINT "CAN'T OPEN FOLDER " : Y.FOLDER.PROC.OUT
+        ABORT
+    END
+
+    OPEN Y.FOLDER.OUT TO F.OUT ELSE
+        PRINT "CAN'T OPEN FOLDER " : Y.FOLDER.OUT
+        ABORT
+    END
+
+
+    Y.SEL.CMD  = 'SELECT ':FN.POSTING.SPAN.TEMP:" WITH @ID LIKE ...":Y.FILENAME:"..."
+    CALL EB.READLIST(Y.SEL.CMD, Y.FILE.NAME.LIST, '', '', '')
+
+    Y.COUNT = DCOUNT(Y.FILE.NAME.LIST,@FM)
+    FOR Y=1 TO Y.COUNT
+
+        Y.ID.TEMP.FOL   = Y.FILE.NAME.LIST<Y>
+        Y.FILE.NAME.FOL = FIELD(Y.ID.TEMP.FOL,"*",1):".LOG"
+
+        CALL F.READ(FN.POSTING.SPAN.TEMP,Y.ID.TEMP.FOL,R.POSTING.SPAN.TEMP,F.POSTING.SPAN.TEMP,ERR.TEMP)
+        CALL F.READ(Y.FOLDER.OUT,Y.FILE.NAME.FOL,R.FOLDER1,F.FOL1,ERR.FOL1)
+        CALL F.READ(Y.FOLDER.PROC.BACKUP,Y.FILE.NAME.FOL,R.FOLDER2,F.FOL2,ERR.FOL2)
+
+        R.FOLDER1<-1> = R.POSTING.SPAN.TEMP
+        R.FOLDER2<-1> = R.POSTING.SPAN.TEMP
+
+*mrk
+        WRITE R.FOLDER1 TO F.FOL1, Y.FILE.NAME.FOL
+        WRITE R.FOLDER2 TO F.FOL2, Y.FILE.NAME.FOL
+        DELETE F.POSTING.SPAN.TEMP, Y.ID.TEMP.FOL
+
+ *       CALL F.WRITE(Y.FOLDER.OUT,Y.FILE.NAME.FOL,R.FOLDER1)
+ *       CALL F.WRITE(Y.FOLDER.PROC.BACKUP,Y.FILE.NAME.FOL,R.FOLDER2)
+ *       CALL F.DELETE(FN.POSTING.SPAN.TEMP,Y.ID.TEMP.FOL)
+    NEXT Y
+
+    RETURN
+END
+
+
+
+
+
+
+
+
+
+

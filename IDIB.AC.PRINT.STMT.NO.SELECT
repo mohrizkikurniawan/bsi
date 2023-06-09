@@ -1,0 +1,37 @@
+*-----------------------------------------------------------------------------
+* <Rating>-20</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE IDIB.AC.PRINT.STMT.NO.SELECT
+*-----------------------------------------------------------------------------
+* Developer Name    : Ratih Purwaning
+* Development Date  : 22 November 2017
+* Description       : Batch Routine to update PRINT.STMT
+*-----------------------------------------------------------------------------
+* Modification History:-
+*-----------------------------------------------------------------------------
+* Date              :
+* Modified by       :
+* Description       :
+* No Log            :
+*-----------------------------------------------------------------------------
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_IDIB.AC.PRINT.STMT.NO.COMMON
+
+*-----------------------------------------------------------------------------
+PROCESS:
+*=======
+    SEL.CMD = "SELECT " : FN.ACCOUNT.STATEMENT : " WITH PRINT.STMT NE 'NO'"
+    CALL EB.READLIST(SEL.CMD,SEL.LIST,'',NO.OF.REC,REC.ERR)
+
+    CALL BATCH.BUILD.LIST('',SEL.LIST)
+
+    RETURN
+*-----------------------------------------------------------------------------
+END
+
+
+
+
+
